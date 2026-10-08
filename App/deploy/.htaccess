@@ -1,0 +1,22 @@
+DirectoryIndex index.php
+
+# Same policy as the CarShow app: the whole app is one self-contained HTML
+# file (inline <script>/<style>, data: URI images), so nothing external is
+# needed.
+<IfModule mod_headers.c>
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
+</IfModule>
+
+# members-data.json holds member PII and the import log — never served
+# directly; index.php reads them server-side. app-bundle.html is only ever
+# served through index.php's login gate. secrets.php is PHP (never served as
+# text) but is denied too, as belt-and-suspenders.
+<FilesMatch "(\.json|^app-bundle\.html|^_login\.html|^secrets\.php|^lib\.php)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>

@@ -1,0 +1,8 @@
+﻿Member #,First Name,Last Name,Spouse First Name,E-Mail,Phone,Address,City,State,Zip,Membership Type,Status,Date Joined,Expiration Date,Corvette Year,Corvette Model,Corvette Color,Emergency Contact
+101,Test,Alpha,Pat,alpha@example.com,555-0101,1 Example St,Knoxville,TN,37901,Family,Active,1/15/2025,12/31/2026,2019,C7,Red,Example Contact
+102,Sample,Bravo,,bravo@example.com,555-0102,"2 Example Ave
+Apt 3",Maryville,TN,37801,Individual,Active,2025-01-03,2026-12-31,2021,C8,Blue,
+103,Demo,Charlie,,charlie@example.com,555-0103,3 Example Rd,Knoxville,TN,37902,Individual,Active,03/09/25,,1967,C2,White,
+104,Fake,Delta,Lee,,555-0104,,Oak Ridge,TN,37830,Family,Lapsed,"Mar 22, 2024",,,,,
+105,Placeholder,Echo,,echo@example.com,,,,,,Individual,Active,,,,,,
+
