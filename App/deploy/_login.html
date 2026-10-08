@@ -1,0 +1,91 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ETCC Membership</title>
+<link rel="icon" type="image/png" href="ETCClogoWhiteBackground.png">
+<link rel="apple-touch-icon" href="ETCClogoWhiteBackground.png">
+<style>
+  html, body { margin: 0; height: 100%; }
+  #password-screen {
+    position: fixed; inset: 0;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  }
+  #password-screen-container {
+    background: #fff; border-radius: 12px; padding: 40px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3); max-width: 400px; width: 100%; box-sizing: border-box;
+  }
+  #password-screen-logo { height: 60px; width: 60px; display: block; margin: 0 auto 20px; object-fit: contain; }
+  #password-screen-title { text-align: center; font-size: 24px; font-weight: 600; color: #1d1d1f; margin: 0 0 10px; }
+  #password-screen-subtitle { text-align: center; font-size: 14px; color: #6e6e73; margin: 0 0 24px; }
+  #password-input {
+    width: 100%; padding: 12px 14px; font-size: 14px; border: 2px solid #d2d2d7;
+    border-radius: 6px; box-sizing: border-box; font-family: inherit; color: #1d1d1f; background: #fff;
+  }
+  #password-input:focus { outline: none; border-color: #0071e3; }
+  #password-input.error { border-color: #c62828; }
+  #password-error { color: #c62828; font-size: 12px; margin: 8px 0 0; display: none; text-align: center; }
+  #password-error.show { display: block; }
+  #password-btn {
+    width: 100%; padding: 12px; background: #0071e3; color: #fff; border: none; border-radius: 6px;
+    font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 16px; transition: background 0.2s;
+  }
+  #password-btn:hover { background: #0077ed; }
+  #password-btn:active { opacity: 0.9; }
+  #password-btn:disabled { opacity: 0.6; cursor: default; }
+  #password-screen-footer {
+    color: rgba(255,255,255,0.85); font-size: 12px; text-align: center; margin-top: 20px;
+  }
+</style>
+</head>
+<body>
+<div id="password-screen">
+  <div id="password-screen-container">
+    <img src="ETCClogoWhiteBackground.png" id="password-screen-logo" alt="ETCC Logo" />
+    <h1 id="password-screen-title">Welcome!</h1>
+    <p id="password-screen-subtitle">Enter password to access the membership roster &amp; reports</p>
+    <input type="password" id="password-input" placeholder="Enter password" autofocus />
+    <div id="password-error">Incorrect password</div>
+    <button id="password-btn">Sign In</button>
+  </div>
+  <div id="password-screen-footer">&copy; 2026 East Tennessee Corvette Club &middot; Knoxville, TN &middot; <a href="mailto:etccwebsite.webmanager@gmail.com">etccwebsite.webmanager@gmail.com</a></div>
+</div>
+<script>
+(function () {
+  var input = document.getElementById('password-input');
+  var btn = document.getElementById('password-btn');
+  var err = document.getElementById('password-error');
+
+  function showError() {
+    err.classList.add('show');
+    input.classList.add('error');
+    input.value = '';
+    input.focus();
+    setTimeout(function () { err.classList.remove('show'); input.classList.remove('error'); }, 3000);
+  }
+
+  function checkPassword() {
+    var pw = input.value;
+    btn.disabled = true;
+    fetch(location.pathname, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'action=login&password=' + encodeURIComponent(pw)
+    }).then(function (res) { return res.json().then(function (data) { return { ok: res.ok, data: data }; }); })
+      .then(function (r) {
+        btn.disabled = false;
+        if (r.ok && r.data && r.data.success) { location.reload(); }
+        else { showError(); }
+      })
+      .catch(function () { btn.disabled = false; showError(); });
+  }
+
+  btn.addEventListener('click', checkPassword);
+  input.addEventListener('keydown', function (e) { if (e.key === 'Enter') checkPassword(); });
+})();
+</script>
+</body>
+</html>

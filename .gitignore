@@ -1,0 +1,15 @@
+node_modules/
+*.log
+Thumbs.db
+.DS_Store
+
+# Built output (node App/build.js) — regenerated before every deploy
+App/ETCCMembership.html
+
+# Deploy secrets — never commit
+App/deploy/secrets.php
+App/deploy/.ftp-credentials
+
+# Live member data (PII) and its import log accumulate on the server only
+App/deploy/members-data.json
+App/deploy/member-import-history.json
