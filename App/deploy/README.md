@@ -58,7 +58,11 @@ there. Every other column in the file is kept as-is and shown in the member's de
 3. First deploy only: upload `secrets.php` by hand, then log in and import the
    membership CSV via the menu's **Import Members**.
 
-The hosting location (folder/URL on etccapps.com) has not been set up yet.
+Live location: **https://etccapps.com/apps/membershipmanager/**. Every link and
+form in the app is relative (`index.php`, `members-import.php`, `logout.php`, the
+logo), so it runs unchanged from that subdirectory. On the CarShow app the `/apps/`
+URL prefix is a server Alias onto the FTP account's own folder (for CarShow,
+`public_html/carshow`), so the FTP account used here should point at this app's own folder.
 
 ## Local testing
 
