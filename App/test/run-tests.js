@@ -53,6 +53,15 @@ test("rejects a file without first/last name columns", function () {
   assert.strictEqual(out.ok, false);
   assert.ok(/First Name/.test(out.error));
 });
+test("converts a Windows-1252 (Excel) CSV to UTF-8", function () {
+  var fs = require("fs"), os = require("os");
+  var tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "mm-")), "cp1252.csv");
+  // "Jos\xE9" is José in Windows-1252 — invalid as UTF-8.
+  fs.writeFileSync(tmp, Buffer.from("First Name,Last Name\nJos\xE9,Foxtrot\n", "latin1"));
+  var out = JSON.parse(execFileSync("php", [path.join(__dirname, "parse-csv.php"), tmp]).toString());
+  assert.strictEqual(out.ok, true);
+  assert.strictEqual(out.members[0].firstName, "José");
+});
 
 console.log("Monthly Membership Report (src/logic.js)");
 var members = parsed.members;

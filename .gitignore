@@ -13,3 +13,6 @@ App/deploy/.ftp-credentials
 # Live member data (PII) and its import log accumulate on the server only
 App/deploy/members-data.json
 App/deploy/member-import-history.json
+App/deploy/login-attempts.json
+App/deploy/*.lock.json
+App/deploy/*.tmp.json

@@ -59,7 +59,10 @@
   var btn = document.getElementById('password-btn');
   var err = document.getElementById('password-error');
 
-  function showError() {
+  function showError(data) {
+    err.textContent = data && data.locked
+      ? 'Too many attempts. Try again in ' + Math.ceil(data.retryAfter / 60) + ' minute(s).'
+      : 'Incorrect password';
     err.classList.add('show');
     input.classList.add('error');
     input.value = '';
@@ -78,7 +81,7 @@
       .then(function (r) {
         btn.disabled = false;
         if (r.ok && r.data && r.data.success) { location.reload(); }
-        else { showError(); }
+        else { showError(r.data); }
       })
       .catch(function () { btn.disabled = false; showError(); });
   }

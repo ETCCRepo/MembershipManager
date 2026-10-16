@@ -7,7 +7,7 @@ DirectoryIndex index.php
   Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
 </IfModule>
 
-# members-data.json holds member PII and the import log — never served
+# members-data.json holds member PII, the import log and login-attempts.json — never served
 # directly; index.php reads them server-side. app-bundle.html is only ever
 # served through index.php's login gate. secrets.php is PHP (never served as
 # text) but is denied too, as belt-and-suspenders.

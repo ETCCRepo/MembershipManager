@@ -18,45 +18,90 @@ function membership_read_json($file, $default = []) {
     return is_array($decoded) ? $decoded : $default;
 }
 
+// Atomic replace: encode first (nothing is touched if that fails), write a
+// temp file next to the target, then rename() over it. Readers see either
+// the old file or the new one, never an empty or half-written one. Temp
+// names end in .json so .htaccess blocks them too.
 function membership_write_json($file, $value) {
-    $fh = fopen($file, 'c+');
+    $json = json_encode($value, JSON_PRETTY_PRINT | JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($json === false) return false;
+    $tmp = $file . '.' . bin2hex(random_bytes(6)) . '.tmp.json';
+    if (file_put_contents($tmp, $json) !== strlen($json) || !rename($tmp, $file)) {
+        @unlink($tmp);
+        return false;
+    }
+    return true;
+}
+
+// Runs $fn while holding an exclusive lock on a sidecar lock file, so
+// read-modify-write cycles on $file don't interleave.
+function membership_with_lock($file, $fn) {
+    $fh = fopen(preg_replace('/\.json$/', '', $file) . '.lock.json', 'c');
     if (!$fh || !flock($fh, LOCK_EX)) {
         if ($fh) fclose($fh);
         return false;
     }
-    ftruncate($fh, 0);
-    rewind($fh);
-    fwrite($fh, json_encode($value, JSON_PRETTY_PRINT));
-    fflush($fh);
-    flock($fh, LOCK_UN);
-    fclose($fh);
-    return true;
+    try {
+        return $fn();
+    } finally {
+        flock($fh, LOCK_UN);
+        fclose($fh);
+    }
 }
 
 function membership_append_json_list($file, $record) {
-    $fh = fopen($file, 'c+');
-    if (!$fh || !flock($fh, LOCK_EX)) {
-        if ($fh) fclose($fh);
-        return false;
-    }
-    $size = filesize($file) ?: 0;
-    $raw = $size > 0 ? fread($fh, $size) : '';
-    $list = $raw ? json_decode($raw, true) : [];
-    if (!is_array($list)) $list = [];
-    $list[] = $record;
-    ftruncate($fh, 0);
-    rewind($fh);
-    fwrite($fh, json_encode($list, JSON_PRETTY_PRINT));
-    fflush($fh);
-    flock($fh, LOCK_UN);
-    fclose($fh);
-    return true;
+    return membership_with_lock($file, function () use ($file, $record) {
+        $list = membership_read_json($file, []);
+        $list[] = $record;
+        return membership_write_json($file, $list);
+    });
+}
+
+// ---- Login throttling: 5 failures within 15 minutes from one IP locks that
+// IP out for 15 minutes. State lives in login-attempts.json (denied by
+// .htaccess, never deployed).
+const MEMBERSHIP_LOGIN_MAX_FAILURES = 5;
+const MEMBERSHIP_LOGIN_WINDOW = 900;
+
+function membership_login_attempts_file() {
+    return __DIR__ . '/login-attempts.json';
+}
+
+// Seconds until $ip may try again, or 0 if it isn't locked out.
+function membership_login_lockout_remaining($ip, $now = null) {
+    $now = $now ?? time();
+    $all = membership_read_json(membership_login_attempts_file(), []);
+    $rec = $all[$ip] ?? null;
+    if (!$rec || count($rec['failures'] ?? []) < MEMBERSHIP_LOGIN_MAX_FAILURES) return 0;
+    $until = max($rec['failures']) + MEMBERSHIP_LOGIN_WINDOW;
+    return max(0, $until - $now);
+}
+
+// Records a failure (or clears the IP's history on success). Old entries
+// for every IP are pruned so the file stays small.
+function membership_login_record($ip, $success, $now = null) {
+    $now = $now ?? time();
+    $file = membership_login_attempts_file();
+    membership_with_lock($file, function () use ($file, $ip, $success, $now) {
+        $all = membership_read_json($file, []);
+        foreach ($all as $k => $rec) {
+            $recent = array_values(array_filter($rec['failures'] ?? [], function ($t) use ($now) {
+                return $t > $now - MEMBERSHIP_LOGIN_WINDOW;
+            }));
+            if ($recent) $all[$k]['failures'] = $recent; else unset($all[$k]);
+        }
+        if ($success) unset($all[$ip]);
+        else $all[$ip]['failures'][] = $now;
+        return membership_write_json($file, $all);
+    });
 }
 
 // JSON safe to drop inside an inline <script>: no "</script" and no raw
-// U+2028/U+2029 line terminators.
+// U+2028/U+2029 line terminators. Invalid UTF-8 is substituted rather than
+// failing, so the boot script is always valid JavaScript.
 function membership_safe_inline_json($value) {
-    $json = json_encode($value);
+    $json = json_encode($value, JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($json === false) $json = 'null';
     $json = str_replace(["\xE2\x80\xA8", "\xE2\x80\xA9"], ['\\u2028', '\\u2029'], $json);
     $json = str_ireplace('</script', '<\\/script', $json);
     return $json;
@@ -121,8 +166,18 @@ function membership_parse_date($raw) {
 // Uses fgetcsv (not per-line str_getcsv) so quoted values with embedded
 // newlines, like multi-line addresses, stay in one row.
 function membership_parse_csv($path) {
-    $fh = @fopen($path, 'r');
-    if (!$fh) return ['ok' => false, 'error' => 'Could not read the uploaded file.'];
+    $raw = @file_get_contents($path);
+    if ($raw === false) return ['ok' => false, 'error' => 'Could not read the uploaded file.'];
+    // Excel often saves CSVs as Windows-1252; convert anything that isn't
+    // valid UTF-8 so names like "José" survive and json_encode can't fail.
+    if (!preg_match('//u', $raw)) {
+        $raw = function_exists('mb_convert_encoding')
+            ? mb_convert_encoding($raw, 'UTF-8', 'Windows-1252')
+            : (string)@iconv('Windows-1252', 'UTF-8//IGNORE', $raw);
+    }
+    $fh = fopen('php://temp', 'r+');
+    fwrite($fh, $raw);
+    rewind($fh);
     $header = fgetcsv($fh, 0, ',', '"', '');
     if (!$header || count(array_filter($header, function ($h) { return trim((string)$h) !== ''; })) === 0) {
         fclose($fh);

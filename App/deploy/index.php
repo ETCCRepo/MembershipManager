@@ -15,8 +15,17 @@ require __DIR__ . '/lib.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login') {
     header('Content-Type: application/json');
+    $ip = (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+    $wait = membership_login_lockout_remaining($ip);
+    if ($wait > 0) {
+        http_response_code(429);
+        header('Retry-After: ' . $wait);
+        echo json_encode(['success' => false, 'locked' => true, 'retryAfter' => $wait]);
+        exit;
+    }
     $pw = (string)($_POST['password'] ?? '');
     $ok = $pw !== '' && !empty($PASSWORD_HASH) && hash_equals($PASSWORD_HASH, crypt($pw, $PASSWORD_HASH));
+    membership_login_record($ip, $ok);
     if ($ok) {
         session_regenerate_id(true);
         $_SESSION['membership_authenticated'] = true;
