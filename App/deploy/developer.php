@@ -128,7 +128,7 @@ if ($action === 'sync_request') {
 
 if ($action === 'sync_token_revoke') {
     if (!membership_sync_token_revoke()) dev_out(500, ['ok' => false, 'error' => 'Could not revoke the token.']);
-    dev_out(200, array_merge(dev_status(), ['message' => 'Sync token revoked. The daily sync is switched off until a new token is created.']));
+    dev_out(200, array_merge(dev_status(), ['message' => 'Sync token revoked. The automatic data import is switched off until a new token is created.']));
 }
 
 if ($action === 'save_settings') {

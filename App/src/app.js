@@ -402,9 +402,9 @@
     if (!sy || !sy.tokenSet) return null;
     var last = sy.lastSuccessAt ? new Date(sy.lastSuccessAt).getTime() : 0, stale = !last || Date.now() - last > 36 * 3600 * 1000;
     if (sy.ok === false || stale) {
-      return { bad: true, text: (sy.ok === false && sy.message ? sy.message : "The daily member sync has not run successfully in over a day") + (last ? " · last success " + fmtDateTime(sy.lastSuccessAt) : " · it has not succeeded yet") };
+      return { bad: true, text: (sy.ok === false && sy.message ? sy.message : "The automatic data import has not run successfully in over a day") + (last ? " · last success " + fmtDateTime(sy.lastSuccessAt) : " · it has not succeeded yet") };
     }
-    return { bad: false, text: "daily sync " + (sy.changed ? "updated " : "checked ") + fmtDateTime(sy.lastSuccessAt) };
+    return { bad: false, text: "data import " + (sy.changed ? "updated " : "checked ") + fmtDateTime(sy.lastSuccessAt) };
   }
 
   function buildDashboardView() {
@@ -954,7 +954,7 @@
     if (!state.importLog.length) { panel.appendChild(el("div", { class: "hint", text: "No imports yet." })); return panel; }
     var head = ["Imported", "File", "Type", "Via", "Rows", "Added", "Updated", "Unchanged", "Rejected"];
     var rows = state.importLog.map(function (e) {
-      return [fmtDateTime(e.timestamp), e.sourceFile || "", e.mode === "partial" ? "Partial" : "Full", e.source === "scheduled" ? "Daily sync" : "Browser", e.count, e.added == null ? "" : e.added, e.updated == null ? "" : e.updated, e.unchanged == null ? "" : e.unchanged, e.rejected == null ? "" : e.rejected];
+      return [fmtDateTime(e.timestamp), e.sourceFile || "", e.mode === "partial" ? "Partial" : "Full", e.source === "scheduled" ? "Auto sync" : "Browser", e.count, e.added == null ? "" : e.added, e.updated == null ? "" : e.updated, e.unchanged == null ? "" : e.unchanged, e.rejected == null ? "" : e.rejected];
     });
     panel.appendChild(el("div", { class: "tablewrap" }, [tkEnhanceTable(el("table", { class: "grid static" }, [
       el("thead", {}, [el("tr", {}, head.map(function (h) { return el("th", { text: h }); }))]),
@@ -1274,9 +1274,9 @@
 
     // Daily sync: a token for the scheduled task on the club's computer, plus the last run's result.
     var sy = state.dev.sync || state.sync || {};
-    var syBox = el("div", { class: "panel pw-form" }, [el("h3", { text: "Daily sync" }),
+    var syBox = el("div", { class: "panel pw-form" }, [el("h3", { text: "Data Import" }),
       el("div", { class: "hint", text: "A task on the club's computer exports the ClubExpress Additional Member Data report once a day, at the time set below, and sends it here. Sync now asks it to run on its next check (about every 5 minutes). It signs in with a sync token, not a password; the server keeps only the token's hash." }),
-      el("div", { text: "Token: " + (sy.tokenSet ? "created " + fmtDateTime(sy.tokenCreatedAt) : "none (the daily sync is off)") }),
+      el("div", { text: "Token: " + (sy.tokenSet ? "created " + fmtDateTime(sy.tokenCreatedAt) : "none (automatic data import is off)") }),
       el("div", { text: "Last run: " + (sy.lastRunAt ? fmtDateTime(sy.lastRunAt) + " — " + (sy.ok ? "ok" : "FAILED") + (sy.message ? " (" + sy.message + ")" : "") : "never") })]);
     var syMsg = el("div", { class: "hint", role: "status" });
     // Manual sync: only records a request; the club computer's poll task (every ~5 minutes) picks it up.
@@ -1303,7 +1303,7 @@
     }
     var gen = el("button", { class: "btn primary", type: "button" }, [sy.tokenSet ? "Replace sync token" : "Create sync token"]);
     gen.addEventListener("click", function () {
-      if (sy.tokenSet && !window.confirm("Replace the sync token? The daily sync stops working until the new token is installed on the club's computer.")) return;
+      if (sy.tokenSet && !window.confirm("Replace the sync token? The automatic data import stops working until the new token is installed on the club's computer.")) return;
       gen.disabled = true;
       devApi("sync_token_generate").then(function (j) {
         gen.disabled = false;
@@ -1315,7 +1315,7 @@
     if (sy.tokenSet) {
       var rev = el("button", { class: "btn", type: "button" }, ["Revoke token (turn the sync off)"]);
       rev.addEventListener("click", function () {
-        if (!window.confirm("Revoke the sync token? The daily sync will stop until a new token is created.")) return;
+        if (!window.confirm("Revoke the sync token? The automatic data import will stop until a new token is created.")) return;
         devApi("sync_token_revoke").then(function (j) {
           if (j && j.ok) { state.dev.newToken = null; applyDev(j, true); }
           else { syMsg.className = "errors"; syMsg.textContent = (j && j.error) || "Could not revoke the token."; }
@@ -1327,7 +1327,7 @@
     syBox.appendChild(syMsg);
 
     // Time of day the sync runs (Eastern time); the club computer's poll task starts it once that time has passed.
-    var tInput = el("input", { type: "time", value: sy.syncTime || "06:30", "aria-label": "Daily sync time" });
+    var tInput = el("input", { type: "time", value: sy.syncTime || "06:30", "aria-label": "Data import time" });
     var tSave = el("button", { class: "btn", type: "button" }, ["Save time"]);
     var tMsg = el("div", { class: "hint", role: "status" });
     tSave.addEventListener("click", function () {

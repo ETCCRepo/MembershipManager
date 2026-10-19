@@ -703,7 +703,7 @@ function membership_sync_claim() {
     });
 }
 
-// One row per sync run (newest first, last 200), shown in Developer -> Daily sync.
+// One row per sync run (newest first, last 200), shown in Developer -> Data Import.
 function membership_sync_log_file() {
     return membership_data_dir() . '/sync-log.json';
 }

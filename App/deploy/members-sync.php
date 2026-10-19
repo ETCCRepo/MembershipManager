@@ -53,7 +53,7 @@ if (($body['status'] ?? '') === 'poll') {
 
 // The task could not produce an export (ClubExpress signed out, page changed...): show it on the site.
 if (($body['status'] ?? '') === 'failed') {
-    membership_sync_status_write(false, 'Daily sync failed: ' . membership_clean_str($body['error'] ?? 'unknown error'));
+    membership_sync_status_write(false, 'Data import failed: ' . membership_clean_str($body['error'] ?? 'unknown error'));
     sync_out(200, ['ok' => true, 'recorded' => 'failure']);
 }
 
@@ -64,6 +64,6 @@ if (!empty($p['ok'])) {
     $msg = $p['changed'] ? ($p['added'] . ' added, ' . $p['updated'] . ' updated, ' . $p['notInFile'] . ' no longer in the export') : 'No changes since the last sync';
     membership_sync_status_write(true, $msg, ['changed' => $p['changed'], 'rows' => count($body['members']), 'added' => $p['added'], 'updated' => $p['updated'], 'notInFile' => $p['notInFile'], 'rejected' => $p['rejected']]);
 } else {
-    membership_sync_status_write(false, 'Daily sync refused: ' . ($p['error'] ?? 'import failed'));
+    membership_sync_status_write(false, 'Data import refused: ' . ($p['error'] ?? 'import failed'));
 }
 sync_out($r['status'], $p);
