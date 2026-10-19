@@ -281,7 +281,7 @@ dates that are bulk-load dates are left out, as everywhere else.
 
 The hamburger menu has a **Developer** item protected by its own password (initial value supplied by the
 owner; only its hash is in the code, and the menu warns until it is changed). Once unlocked (30 idle minutes)
-you can **change the website login password**, **change the developer password** (current one required), and see a
+you can **change the website login password**, **change the developer password** (no need to re-enter the current one while unlocked), and see a
 **system check** (PHP version, data folder writable, roster/snapshot counts, password source, SMTP status).
 Changing the website password signs out every other browser. **The developer password also works as the website login password**, but only after it has been changed from the initial one (the initial password is a known default and never unlocks member data); logging in with it does not unlock the Developer menu, which still asks for the password. Passwords are stored only as salted SHA-512 hashes
 in `data/auth.json`, which overrides the hash in `secrets.php` once set. Five wrong developer passwords from one

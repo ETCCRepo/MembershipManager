@@ -122,10 +122,6 @@ if ($action === 'save_settings') {
 }
 
 if ($action === 'change_dev_password') {
-    // Re-check the current developer password even though the menu is unlocked.
-    if (!membership_verify_password($body['currentPassword'] ?? '', membership_dev_hash())) {
-        dev_out(401, ['ok' => false, 'error' => 'The current developer password is incorrect.']);
-    }
     $new = (string)($body['newPassword'] ?? '');
     $problem = membership_password_problem($new);
     if ($problem !== '') dev_out(422, ['ok' => false, 'error' => $problem]);

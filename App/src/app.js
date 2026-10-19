@@ -1203,10 +1203,10 @@
       "The password everyone uses to open this site. Changing it signs out all other browsers immediately. At least " + MIN_PASSWORD + " characters.",
       [n1, n2], "change_site_password", function () { return { newPassword: n1.input.value }; }, "Change website password"));
 
-    var c0 = passwordField("Current developer password", "current-password"), d1 = passwordField("New developer password", "new-password"), d2 = passwordField("Confirm new developer password", "new-password");
+    var d1 = passwordField("New developer password", "new-password"), d2 = passwordField("Confirm new developer password", "new-password");
     view.appendChild(passwordForm("Change developer password",
-      "The password for this Developer area. You must enter the current one. At least " + MIN_PASSWORD + " characters.",
-      [c0, d1, d2], "change_dev_password", function () { return { currentPassword: c0.input.value, newPassword: d1.input.value }; }, "Change developer password"));
+      "The password for this Developer area; it also opens the website once it has been changed. At least " + MIN_PASSWORD + " characters.",
+      [d1, d2], "change_dev_password", function () { return { newPassword: d1.input.value }; }, "Change developer password"));
 
     // Renewal dates: month and day only. Memberships expire on the END date; the window repeats every year.
     var MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];

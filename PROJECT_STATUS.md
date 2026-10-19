@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (night, 17) — changing the developer password no longer asks for the current one
+- Owner request. `change_dev_password` in `developer.php` now only requires the Developer menu to be unlocked (as `change_site_password` already did); the form has just New + Confirm. Deployed.
+
 ### 2026-10-19 (night, 16) — developer password also logs into the website
 - Owner: the developer password should be accepted at the website login as well. `index.php` now accepts the site password OR `membership_dev_password_login_ok()` (lib.php). **Guard:** only once the developer password has been changed from the initial one (a changed one is stored as `devHash`); the initial default never opens the site. The same lockout (5 wrong tries / 15 min) applies; logging in this way does not unlock the Developer menu. Not exercised live (needs the owner's password). Deployed.
 
