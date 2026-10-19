@@ -948,21 +948,6 @@
     return box;
   }
 
-  // inner: shown inside the Data Import panel (no panel box of its own).
-  function importHistory(inner) {
-    var panel = el("div", inner ? { class: "importhist" } : { class: "panel" }, [el(inner ? "h4" : "h3", { text: "Import history" })]);
-    if (!state.importLog.length) { panel.appendChild(el("div", { class: "hint", text: "No imports yet." })); return panel; }
-    var head = ["Imported", "File", "Type", "Via", "Rows", "Added", "Updated", "Unchanged", "Rejected"];
-    var rows = state.importLog.map(function (e) {
-      return [fmtDateTime(e.timestamp), e.sourceFile || "", e.mode === "partial" ? "Partial" : "Full", e.source === "scheduled" ? "Auto sync" : "Browser", e.count, e.added == null ? "" : e.added, e.updated == null ? "" : e.updated, e.unchanged == null ? "" : e.unchanged, e.rejected == null ? "" : e.rejected];
-    });
-    panel.appendChild(el("div", { class: "tablewrap" }, [tkEnhanceTable(el("table", { class: "grid static" }, [
-      el("thead", {}, [el("tr", {}, head.map(function (h) { return el("th", { text: h }); }))]),
-      el("tbody", {}, rows.map(function (r) { return el("tr", {}, r.map(function (c) { return el("td", { text: String(c) }); })); }))
-    ]), "importHistory")]));
-    return panel;
-  }
-
   // ---------- Total members / households over time ----------
   // Built from today's roster (current members by recorded join date) plus exact totals from the full
   // imports saved by this site. The first is NOT the club's past membership: see totalsIntro().
@@ -1367,9 +1352,9 @@
     // Every sync run, newest first.
     var slog = state.dev.syncLog || [];
     syBox.appendChild(el("h4", { text: "Sync log" }));
-    if (!slog.length) syBox.appendChild(el("div", { class: "hint", text: "No syncs have run since logging was added." }));
+    if (!slog.length) syBox.appendChild(el("div", { class: "hint", text: "No imports logged yet." }));
     else {
-      var how = { manual: "Sync now", scheduled: "Scheduled", direct: "Run on the computer" };
+      var how = { manual: "Sync now", scheduled: "Scheduled", browser: "Upload", direct: "Run on the computer" };
       syBox.appendChild(el("div", { class: "tablewrap" }, [tkEnhanceTable(el("table", { class: "grid static" }, [
         el("thead", {}, [el("tr", {}, ["When", "How", "Result", "Details"].map(function (h) { return el("th", { text: h }); }))]),
         el("tbody", {}, slog.map(function (e) {
@@ -1377,7 +1362,6 @@
         }))
       ]), "syncLog")]));
     }
-    syBox.appendChild(importHistory(true));
     view.appendChild(makeCollapsible(syBox, "dev:sync"));
 
     view.appendChild(makeCollapsible(el("div", { class: "panel" }, [el("h3", { text: "System check" }), el("div", { id: "devSystem" })]), "dev:system"));

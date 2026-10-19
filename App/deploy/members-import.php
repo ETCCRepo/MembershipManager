@@ -54,4 +54,10 @@ $body = json_decode($raw, true);
 if (!is_array($body) || !is_array($body['members'] ?? null)) membership_json_out(400, ['ok' => false, 'error' => 'Malformed import.']);
 
 $r = membership_import_commit($body['members'], $body['rejected'] ?? [], $body['mode'] ?? 'full', (string)($body['sourceFile'] ?? 'upload.csv'), 'browser');
-membership_json_out($r['status'], $r['payload']);
+$p = $r['payload'];
+// Browser uploads go in the Data Import sync log too, so it is the one place that lists every import.
+membership_sync_log_add(['at' => gmdate('c'), 'ok' => !empty($p['ok']), 'trigger' => 'browser',
+    'message' => !empty($p['ok']) ? ((string)($body['sourceFile'] ?? 'upload.csv') . ': ' . ($p['added'] ?? 0) . ' added, ' . ($p['updated'] ?? 0) . ' updated')
+        : mb_substr('Upload refused: ' . ($p['error'] ?? 'import failed'), 0, 300),
+    'rows' => count($body['members']), 'added' => $p['added'] ?? null, 'updated' => $p['updated'] ?? null]);
+membership_json_out($r['status'], $p);
