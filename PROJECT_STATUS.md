@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (late night, 13) — Membership card follows the meeting month
+- Owner: the Monthly Meeting Membership card did not change with the meeting month. It now shows membership **as of the end of the chosen month** (today for the month in progress): today's active members whose recorded join date is on/before that date (an estimate, labelled; bulk-load-date members only appear from that date on), or the exact total from a saved full import when one was saved during that month. Click opens the list behind the number. Deployed.
+
 ### 2026-10-19 (late night, 12) — Reports tab removed
 - Owner: remove the Reports tab. Tabs are now Dashboard, Monthly Meeting, Members, Import. Removed `buildReportsView`, `buildReportSpec` and the report picker/period code from `app.js` (bundle 211 KB -> 191 KB); `renderSection` stays (Monthly Meeting uses it) and `reports.js` is unchanged. An old `#reports` link opens the Dashboard. No longer reachable in the UI: status / type / tenure / geography / renewals / history / households / long-serving & anniversaries / data-quality reports (restore from git at `dcceb7c` or earlier if wanted; the households and totals charts remain on the dashboard). Wording that pointed to Reports was updated. Deployed.
 

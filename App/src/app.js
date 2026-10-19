@@ -743,7 +743,7 @@
     area.appendChild(el("div", { class: "panel explain" }, [el("strong", { text: "How the month is counted. " }),
       "A meeting month starts the Wednesday after a month's first Tuesday and ends on the next month's first Tuesday, both days included. " +
       (sel.inProgress ? "This month is still in progress, so numbers run through today (" + L.formatDate(t) + "); it ends on " + L.formatDate(sel.end) + ". " : "") +
-      "Counts are for the current roster; role accounts are excluded and bulk-load join dates are left out of new-member counts."]));
+      "Counts are for the current roster; role accounts are excluded and bulk-load join dates are left out of new-member counts. Membership is as of the month's end: for a past month it is an estimate (today's members who had joined by then, since people who left are not in the export) unless a full import was saved during that month."]));
 
     if (o.summary) {
       var prevNm = prev ? R.newMembers(pool, prev.start, prev.end, suspect).members : null;
@@ -751,7 +751,18 @@
       var hAct = R.householdBreakdown(active), hNew = R.householdTotal(joined);
       var expNext = R.expiringInRange(active, nxt.start, nxt.end, t);
       var grid = el("div", { class: "kpi-grid" });
-      grid.appendChild(kpi("Membership", mmhh(active), viewWord() + " today · " + num(hAct.singleHouseholds) + " single + " + num(hAct.couples.length) + " couple members ÷ 2", function () { openList("Membership (active members)", active); }));
+      // Membership as of the END of the chosen meeting month (today for the month in progress). A past total
+      // cannot be known exactly, so it is the number of today's active members who had joined by then; an exact
+      // figure from a full import saved during that month replaces it.
+      var snapHit = R.snapshotSeries(state.snapshots).filter(function (x) { return x.date >= sel.start && x.date <= effEnd; }).pop();
+      var atList = sel.inProgress ? active : active.filter(function (m) { return m.joinDate && m.joinDate <= effEnd; });
+      if (snapHit) {
+        var snapVal = viewKinds().map(function (k) { return num(k === "households" ? snapHit.households : snapHit.count); }).join("/");
+        grid.appendChild(kpi("Membership", snapVal, viewWord() + " · saved import " + L.formatDate(snapHit.date) + " (exact)"));
+      } else {
+        var hAt = R.householdBreakdown(atList);
+        grid.appendChild(kpi("Membership", mmhh(atList), viewWord() + " as of " + L.formatDate(effEnd) + (sel.inProgress ? " (today)" : " · estimate from join dates") + " · " + num(hAt.singleHouseholds) + " single + " + num(hAt.couples.length) + " couple members ÷ 2", function () { openList("Membership as of " + L.formatDate(effEnd), atList); }));
+      }
       grid.appendChild(kpi("New " + viewWord(), mmhh(joined), viewWord() + " · " + L.formatDate(sel.start) + " to " + L.formatDate(effEnd), function () { openList(joinedTitle, joined); }));
       if (cmp) grid.appendChild(kpi("Vs previous month", mmhhDelta(joined, prevNm), mmhh(prevNm) + " new in " + L.formatDate(prev.start) + " to " + L.formatDate(prev.end) + (cmp.pct == null ? "" : " (" + (cmp.abs >= 0 ? "+" : "") + Math.round(cmp.pct * 10) / 10 + "%)"), function () { openList("New members in previous month", prevNm); }));
       grid.appendChild(kpi("Expiring next month", mmhh(expNext), L.formatDate(nxt.start) + " to " + L.formatDate(nxt.end), function () { openList("Expiring " + nxt.label, expNext); }));
