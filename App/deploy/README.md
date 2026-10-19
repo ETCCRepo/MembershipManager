@@ -199,6 +199,31 @@ filtered tables. "Total" rows stay at the bottom and are re-summed for the rows 
 directory, every report's supporting table, the Monthly Meeting tables, the click-through member lists and the import
 history. Code: `tkFillHeader` / `tkEnhance` in `App/src/app.js`. Exports (CSV) always contain the full table.
 
+## Daily member sync (ClubExpress -> website, once a day)
+
+A Windows scheduled task on the club's computer exports the ClubExpress **Additional Member Data** report every morning and imports it
+as a **full snapshot**. Nothing ClubExpress-related is stored: the export drives a dedicated Chrome profile an officer signed into by hand
+(shared with the CarShow and Vette Fest syncs), and the upload uses a **sync token** — not a password — created in the Developer menu.
+
+**How it flows:** `App/sync/sync-members.js` → `clubexpress-members.js` (Control Panel → People → Additional Member Data → Export Answers → Export)
+→ the same parser/validator as the Import tab (`src/csvimport.js`) → `POST members-sync.php` (header `X-Sync-Token`). The server re-validates,
+then: an **identical** roster writes nothing; a changed roster becomes a dated snapshot (so *Total membership over time* gets an exact point);
+a file with **fewer than half** of the current members is refused as a truncated export. After every run the site records ok/failed — the
+**dashboard shows a red notice** if the last run failed or none has succeeded in 36 hours; the Developer menu shows the details. Exports are kept
+in `Z:\Backup\ETCC\Membership\Additional Member Data Report\answers-YYYYMMDD.csv` for 60 days.
+
+**One-time setup** (on the club computer, in `App\`):
+1. `npm install` (installs `playwright-core`; it uses the installed Google Chrome).
+2. `node sync\clubexpress-login.js` — sign into ClubExpress **in the window it opens, with “Remember Me” ticked**, and wait for CONFIRMED / DURABLE.
+3. Website → Developer → **Daily sync → Create sync token**; copy it (shown once).
+4. `powershell -ExecutionPolicy Bypass -File sync\set-token.ps1` and paste the token (hidden prompt; stored as the user variable `MEMBERSHIP_SYNC_TOKEN`).
+5. `node sync\sync-members.js --dry-run` (no upload), then `node sync\sync-members.js` — the Import history shows a **Daily sync** row.
+6. `powershell -ExecutionPolicy Bypass -File sync\install-scheduled-task.ps1` (daily 6:30 AM; `-Time "07:15"` to change; `-Uninstall` removes it).
+
+**Maintenance:** if ClubExpress signs out (rare; weeks to months), the dashboard shows the failure — re-run step 2. If ClubExpress changes the report's
+location, `node sync\clubexpress-members.js --discover --headed` walks the path and prints what is visible at each step. Replace or revoke the token any
+time from Developer → Daily sync (the sync stops until a new token is installed). Local log: `App\sync\sync-members.local.log` (counts only, no member data).
+
 ## Show: Members / Households / Both (site-wide)
 
 The dropdown at the right of the tab bar applies to **every page**. *Both* (default) shows `members/households`, e.g. 361/217;

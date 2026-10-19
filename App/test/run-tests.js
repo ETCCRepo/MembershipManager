@@ -301,6 +301,30 @@ test("new households by month sum to the households among the new members (chart
   eq(months.reduce(function (a, m) { return a + m.people; }, 0), nm.length);
 });
 
+console.log("Daily sync script (sync/sync-members.js)");
+test("a dry run on the synthetic export reads, checks and counts it, and sends nothing", function () {
+  var cp = require("child_process");
+  var out = cp.execFileSync(process.execPath, [path.join(__dirname, "..", "sync", "sync-members.js"), "--file", path.join(__dirname, "fixtures", "clubexpress-sample.csv"), "--dry-run"], { encoding: "utf8", env: Object.assign({}, process.env, { MEMBERSHIP_SYNC_TOKEN: "" }) });
+  assert.ok(/Read 98 rows/.test(out), out);
+  assert.ok(/96 people/.test(out) && /2 rejected rows/.test(out), out);
+  assert.ok(/Dry run: nothing was sent/.test(out), out);
+});
+test("it refuses a file that is not a membership roster, with a plain-English reason", function () {
+  var cp = require("child_process"), os = require("os");
+  var tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "mm-sync-")), "bad.csv");
+  fs.writeFileSync(tmp, "Name,Email\nSomeone,a@example.com\n");
+  var failed = false;
+  try { cp.execFileSync(process.execPath, [path.join(__dirname, "..", "sync", "sync-members.js"), "--file", tmp, "--dry-run"], { encoding: "utf8", stdio: "pipe" }); }
+  catch (e) { failed = true; assert.ok(/missing required columns/.test(String(e.stdout)), String(e.stdout)); assert.strictEqual(e.status, 1); }
+  assert.ok(failed, "a non-roster file must fail");
+  var small = path.join(path.dirname(tmp), "small.csv");
+  fs.writeFileSync(small, "last_name,first_name,member_number\nA,B,1\nC,D,2\n");
+  failed = false;
+  try { cp.execFileSync(process.execPath, [path.join(__dirname, "..", "sync", "sync-members.js"), "--file", small, "--dry-run"], { encoding: "utf8", stdio: "pipe" }); }
+  catch (e) { failed = true; assert.ok(/only 2 members/.test(String(e.stdout)), String(e.stdout)); }
+  assert.ok(failed, "a tiny file must be refused as not the full roster");
+});
+
 console.log("Chart axes");
 test("every y-axis tick is a whole number and covers the data, for bar and line ranges", function () {
   var savedWindow = global.window, savedDocument = global.document;

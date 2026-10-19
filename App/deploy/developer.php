@@ -21,6 +21,7 @@ function dev_status() {
     $auth = membership_auth_read();
     $out = ['ok' => true, 'unlocked' => membership_dev_unlocked()];
     $out['settings'] = membership_settings_read();
+    $out['sync'] = membership_sync_public();
     if (!$out['unlocked']) return $out;
     $members = membership_read_json(membership_members_file(), []);
     $snapDir = membership_data_dir('snapshots');
@@ -93,6 +94,18 @@ if ($action === 'change_site_password') {
     // Every other browser is signed out; keep this one signed in.
     $_SESSION['membership_auth_version'] = (int)($saved['siteVersion'] ?? 0);
     dev_out(200, array_merge(dev_status(), ['message' => 'Website login password changed. Everyone else has been signed out.']));
+}
+
+if ($action === 'sync_token_generate') {
+    $token = membership_sync_token_new();
+    if ($token === false) dev_out(500, ['ok' => false, 'error' => 'Could not create the token. Nothing was changed.']);
+    // The token is returned this one time only; the server keeps just its hash.
+    dev_out(200, array_merge(dev_status(), ['token' => $token, 'message' => 'New sync token created. Copy it now — it will not be shown again, and the old token (if any) no longer works.']));
+}
+
+if ($action === 'sync_token_revoke') {
+    if (!membership_sync_token_revoke()) dev_out(500, ['ok' => false, 'error' => 'Could not revoke the token.']);
+    dev_out(200, array_merge(dev_status(), ['message' => 'Sync token revoked. The daily sync is switched off until a new token is created.']));
 }
 
 if ($action === 'save_settings') {

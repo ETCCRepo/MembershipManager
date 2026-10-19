@@ -23,6 +23,10 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (night, 14) — daily ClubExpress sync (built; export step awaiting sign-in)
+- Owner: export the Additional Member Data report once a day and import it. Built: **server** `members-sync.php` (token header `X-Sync-Token`; only the SHA-256 hash is in `data/auth.json`; same lockout as login) + shared `membership_import_commit()` in `lib.php` (used by the browser import too; unchanged roster writes nothing, <50% roster refused, `source` = scheduled/browser in the import log) + `data/sync-status.json`; **Developer → Daily sync** (create/replace/revoke token, last run); dashboard red notice when the last run failed or none succeeded in 36 h; **local** `App/sync/` (`sync-members.js`, `clubexpress-members.js`, `clubexpress-common.js`, `clubexpress-login.js`, `set-token.ps1`, `install-scheduled-task.ps1`), `playwright-core` dependency. Setup steps are in `App/deploy/README.md` ('Daily member sync').
+- Verified: Node tests (74, incl. dry-run of the sync on the synthetic fixture); dry run on the real `answers35.csv` = 381 people / 217 households / 0 rejected; PHP lint. **NOT verified:** the live `members-sync.php` with a real token, the ClubExpress export step (the shared Chrome profile is SIGNED OUT — the probe showed 'Member Login' — so the navigation in `clubexpress-members.js` is written from the path documented in CarShow and unconfirmed; run `npm run sync:discover` after `npm run sync:login`), and the scheduled task (not installed).
+
 ### 2026-10-19 (late night, 13) — Membership card follows the meeting month
 - Owner: the Monthly Meeting Membership card did not change with the meeting month. It now shows membership **as of the end of the chosen month** (today for the month in progress): today's active members whose recorded join date is on/before that date (an estimate, labelled; bulk-load-date members only appear from that date on), or the exact total from a saved full import when one was saved during that month. Click opens the list behind the number. Deployed.
 

@@ -28,7 +28,7 @@
     report: "new",
     search: "", sortKey: "lastName", sortDir: "asc",
     detailMember: null, list: null, menuOpen: false,
-    imp: null, chartPage: null, open: {}, secKeys: [], view: loadView(), settings: { renewalStart: "10-01", renewalEnd: "12-31" },
+    imp: null, chartPage: null, open: {}, secKeys: [], view: loadView(), settings: { renewalStart: "10-01", renewalEnd: "12-31" }, sync: null,
     meetingEnd: null, meetingOpts: { joined: true, summary: true, renewals: true, anniversaries: true },
     dev: { loading: false, unlocked: false, system: null, message: "", error: "" }
   };
@@ -87,7 +87,8 @@
     },
     ingestImportLog: function (log) { state.importLog = Array.isArray(log) ? log : []; renderViews(); },
     ingestSnapshots: function (snaps) { state.snapshots = Array.isArray(snaps) ? snaps : []; renderViews(); },
-    ingestSettings: function (st) { if (st && typeof st === "object") { state.settings = { renewalStart: st.renewalStart || "10-01", renewalEnd: st.renewalEnd || "12-31" }; renderViews(); } }
+    ingestSettings: function (st) { if (st && typeof st === "object") { state.settings = { renewalStart: st.renewalStart || "10-01", renewalEnd: st.renewalEnd || "12-31" }; renderViews(); } },
+    ingestSync: function (sy) { state.sync = sy && typeof sy === "object" ? sy : null; renderViews(); }
   };
 
   // ---------- derived data ----------
@@ -153,6 +154,7 @@
   function selectTab(id) {
     state.tab = id;
     state.open = {};
+    state.dev.newToken = null;
     try { history.replaceState(null, "", "#" + id); } catch (e) { /* file:// previews */ }
     renderViews();
     window.scrollTo(0, 0);
@@ -396,6 +398,18 @@
     return makeCollapsible(card, "dash:" + title, { headClick: !onOpen });
   }
 
+  // Daily-sync status for the dashboard: nothing until a sync token exists; a red notice when the last run
+  // failed or no run has succeeded in 36 hours.
+  function syncLine() {
+    var sy = state.sync;
+    if (!sy || !sy.tokenSet) return null;
+    var last = sy.lastSuccessAt ? new Date(sy.lastSuccessAt).getTime() : 0, stale = !last || Date.now() - last > 36 * 3600 * 1000;
+    if (sy.ok === false || stale) {
+      return { bad: true, text: (sy.ok === false && sy.message ? sy.message : "The daily member sync has not run successfully in over a day") + (last ? " · last success " + fmtDateTime(sy.lastSuccessAt) : " · it has not succeeded yet") };
+    }
+    return { bad: false, text: "daily sync " + (sy.changed ? "updated " : "checked ") + fmtDateTime(sy.lastSuccessAt) };
+  }
+
   function buildDashboardView() {
     var view = el("div", { class: "view" });
     if (!state.members.length) { view.appendChild(emptyRosterState()); return view; }
@@ -403,7 +417,9 @@
     var t = today(), pool = R.pool(state.members, {}), suspect = R.suspectJoinDates(state.members);
     var active = pool.filter(R.isActive);
     var src = state.importLog.length && state.importLog[0].sourceFile ? " · " + state.importLog[0].sourceFile : "";
-    if (state.importedAt) view.appendChild(el("div", { class: "loadedinfo", text: "Last import " + fmtDateTime(state.importedAt) + src }));
+    var sy = syncLine();
+    if (state.importedAt) view.appendChild(el("div", { class: "loadedinfo", text: "Last import " + fmtDateTime(state.importedAt) + src + (sy && !sy.bad ? " · " + sy.text : "") }));
+    if (sy && sy.bad) view.appendChild(el("div", { class: "errors", text: sy.text }));
 
     // Five cards: where we are, what's new, and the renewal picture.
     function newIn(key) { var p = R.period(key, t, "rolling"); return { p: p, list: R.newMembers(pool, p.start, p.end, suspect).members }; }
@@ -939,9 +955,9 @@
   function importHistory() {
     var panel = el("div", { class: "panel" }, [el("h3", { text: "Import history" })]);
     if (!state.importLog.length) { panel.appendChild(el("div", { class: "hint", text: "No imports yet." })); return panel; }
-    var head = ["Imported", "File", "Type", "Rows", "Added", "Updated", "Unchanged", "Rejected"];
+    var head = ["Imported", "File", "Type", "Via", "Rows", "Added", "Updated", "Unchanged", "Rejected"];
     var rows = state.importLog.map(function (e) {
-      return [fmtDateTime(e.timestamp), e.sourceFile || "", e.mode === "partial" ? "Partial" : "Full", e.count, e.added == null ? "" : e.added, e.updated == null ? "" : e.updated, e.unchanged == null ? "" : e.unchanged, e.rejected == null ? "" : e.rejected];
+      return [fmtDateTime(e.timestamp), e.sourceFile || "", e.mode === "partial" ? "Partial" : "Full", e.source === "scheduled" ? "Daily sync" : "Browser", e.count, e.added == null ? "" : e.added, e.updated == null ? "" : e.updated, e.unchanged == null ? "" : e.unchanged, e.rejected == null ? "" : e.rejected];
     });
     panel.appendChild(el("div", { class: "tablewrap" }, [tkEnhanceTable(el("table", { class: "grid static" }, [
       el("thead", {}, [el("tr", {}, head.map(function (h) { return el("th", { text: h }); }))]),
@@ -1092,6 +1108,7 @@
     if (j && j.ok) {
       state.dev.unlocked = !!j.unlocked;
       state.dev.system = j.system || null;
+      if (j.sync) { state.sync = j.sync; state.dev.sync = j.sync; }
       state.dev.error = "";
       state.dev.message = keepMessage ? (j.message || "") : "";
     } else {
@@ -1232,6 +1249,49 @@
     });
     view.appendChild(makeCollapsible(rForm, "dev:renewal"));
     rPreview();
+
+    // Daily sync: a token for the scheduled task on the club's computer, plus the last run's result.
+    var sy = state.dev.sync || state.sync || {};
+    var syBox = el("div", { class: "panel pw-form" }, [el("h3", { text: "Daily sync" }),
+      el("div", { class: "hint", text: "A task on the club's computer exports the ClubExpress Additional Member Data report once a day and sends it here. It signs in with a sync token, not a password; the server keeps only the token's hash." }),
+      el("div", { text: "Token: " + (sy.tokenSet ? "created " + fmtDateTime(sy.tokenCreatedAt) : "none (the daily sync is off)") }),
+      el("div", { text: "Last run: " + (sy.lastRunAt ? fmtDateTime(sy.lastRunAt) + " — " + (sy.ok ? "ok" : "FAILED") + (sy.message ? " (" + sy.message + ")" : "") : "never") })]);
+    var syMsg = el("div", { class: "hint", role: "status" });
+    if (state.dev.newToken) {
+      var tokInput = el("input", { type: "text", readonly: "readonly", value: state.dev.newToken, "aria-label": "New sync token", style: "width:100%;font-family:monospace" });
+      tokInput.addEventListener("focus", function () { tokInput.select(); });
+      var copy = el("button", { class: "btn", type: "button" }, ["Copy"]);
+      copy.addEventListener("click", function () { try { navigator.clipboard.writeText(state.dev.newToken); copy.textContent = "Copied"; } catch (e) { tokInput.select(); } });
+      syBox.appendChild(el("div", { class: "success" }, ["New token — copy it now; it is shown only once and the old token no longer works."]));
+      syBox.appendChild(tokInput);
+      syBox.appendChild(el("div", { class: "toolbar" }, [copy]));
+      syBox.appendChild(el("div", { class: "hint", text: "On the club's computer, run:  powershell -ExecutionPolicy Bypass -File Z:\\Backup\\websites\\MembershipManager\\App\\sync\\set-token.ps1  and paste the token when asked." }));
+    }
+    var gen = el("button", { class: "btn primary", type: "button" }, [sy.tokenSet ? "Replace sync token" : "Create sync token"]);
+    gen.addEventListener("click", function () {
+      if (sy.tokenSet && !window.confirm("Replace the sync token? The daily sync stops working until the new token is installed on the club's computer.")) return;
+      gen.disabled = true;
+      devApi("sync_token_generate").then(function (j) {
+        gen.disabled = false;
+        if (j && j.ok) { state.dev.newToken = j.token; applyDev(j, true); }
+        else { syMsg.className = "errors"; syMsg.textContent = (j && j.error) || "Could not create the token."; }
+      }).catch(function () { gen.disabled = false; syMsg.className = "errors"; syMsg.textContent = "Could not reach the server. Nothing was changed."; });
+    });
+    var btns = [gen];
+    if (sy.tokenSet) {
+      var rev = el("button", { class: "btn", type: "button" }, ["Revoke token (turn the sync off)"]);
+      rev.addEventListener("click", function () {
+        if (!window.confirm("Revoke the sync token? The daily sync will stop until a new token is created.")) return;
+        devApi("sync_token_revoke").then(function (j) {
+          if (j && j.ok) { state.dev.newToken = null; applyDev(j, true); }
+          else { syMsg.className = "errors"; syMsg.textContent = (j && j.error) || "Could not revoke the token."; }
+        });
+      });
+      btns.push(rev);
+    }
+    syBox.appendChild(el("div", { class: "toolbar" }, btns));
+    syBox.appendChild(syMsg);
+    view.appendChild(makeCollapsible(syBox, "dev:sync"));
 
     view.appendChild(makeCollapsible(el("div", { class: "panel" }, [el("h3", { text: "System check" }), el("div", { id: "devSystem" })]), "dev:system"));
     setTimeout(renderSystemCheck, 0);

@@ -5,7 +5,14 @@
   "description": "ETCC Membership Manager — membership roster and reports",
   "scripts": {
     "build": "node build.js",
-    "test": "node test/run-tests.js"
+    "test": "node test/run-tests.js",
+    "sync": "node sync/sync-members.js",
+    "sync:dry-run": "node sync/sync-members.js --dry-run",
+    "sync:login": "node sync/clubexpress-login.js",
+    "sync:discover": "node sync/clubexpress-members.js --discover --headed"
+  },
+  "dependencies": {
+    "playwright-core": "^1.63.0"
   },
   "license": "UNLICENSED"
 }
