@@ -294,3 +294,8 @@ table.grid tbody tr.cc-total, table.grid tbody tr.cc-total td { font-weight: 700
 body.report-open .modal-backdrop { z-index: 420; }
 body.report-open .modal-backdrop.top { z-index: 430; }
 @media (max-width: 640px) { .api-page-head { grid-template-columns: 1fr; justify-items: stretch; } .api-page-head .right { justify-self: stretch; flex-wrap: wrap; } }
+
+/* Site-wide Show (Members / Households / Both) dropdown at the right of the tab bar */
+.tabs { align-items: flex-end; }
+.tabs .view-pick { margin-bottom: 4px; font-weight: 600; }
+@media (max-width: 640px) { .tabs .view-pick { flex-shrink: 0; } }

@@ -301,6 +301,27 @@ test("new households by month sum to the households among the new members (chart
   eq(months.reduce(function (a, m) { return a + m.people; }, 0), nm.length);
 });
 
+console.log("Renewal status (renewed / left to renew / expired)");
+test("renewal target is the year-end renewals are working toward (season starts Oct 1)", function () {
+  eq(R.renewalTarget("2026-10-19"), "2027-12-31");
+  eq(R.renewalTarget("2026-09-30"), "2026-12-31");
+  eq(R.renewalTarget("2027-02-10"), "2027-12-31");
+  eq(R.renewalTarget("2026-12-31"), "2027-12-31");
+});
+test("every member lands in exactly one renewal group; groups follow the dates", function () {
+  var rs = R.renewalStatus(peoplePool, TODAY);
+  eq(rs.target, "2027-12-31");
+  eq(rs.renewed.length + rs.left.length + rs.expired.length + rs.noExpiry.length, peoplePool.length);
+  eq(rs.renewed.map(function (m) { return m.lastName; }).sort(), ["Founder", "Honor", "Veteran"]);
+  eq(rs.expired.map(function (m) { return m.lastName; }), ["Lapsed"]);
+  assert.ok(rs.left.some(function (m) { return m.lastName === "Soon"; }));
+  assert.ok(rs.left.every(function (m) { return m.expirationDate >= TODAY && m.expirationDate < "2027-12-31"; }));
+});
+test("after the year-end passes, unrenewed members are expired and renewed ones are current", function () {
+  var rs = R.renewalStatus([{ expirationDate: "2026-12-31" }, { expirationDate: "2027-12-31" }], "2027-02-01");
+  eq([rs.expired.length, rs.renewed.length, rs.left.length], [1, 1, 0]);
+});
+
 console.log("Chart-page periods and buckets");
 test("2-year and 10-year rolling periods", function () {
   var p2 = R.period("24m", TODAY, "rolling"), p10 = R.period("120m", TODAY, "rolling");

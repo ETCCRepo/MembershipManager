@@ -178,6 +178,24 @@ filtered tables. "Total" rows stay at the bottom and are re-summed for the rows 
 directory, every report's supporting table, the Monthly Meeting tables, the click-through member lists and the import
 history. Code: `tkFillHeader` / `tkEnhance` in `App/src/app.js`. Exports (CSV) always contain the full table.
 
+## Show: Members / Households / Both (site-wide)
+
+The dropdown at the right of the tab bar applies to **every page**. *Both* (default) shows `members/households`, e.g. 361/217;
+*Members* or *Households* shows just that number. It drives all cards, the dashboard charts (the household-only charts appear in
+*Households* and *Both*), and every report chart and table (a column per kind shown). The choice is remembered in the browser.
+Households = single members + couple members ÷ 2.
+
+## Renewal cards (Renewed / Left to renew / Expired)
+
+Based on the expiration date (the export's `last_renewal_date` is filled for only a few members, so it is not used).
+The **renewal target** is the year-end renewals are working toward: **12/31 of next year from October 1** (renewal season is
+*assumed* to start October 1 — change `RENEWAL_SEASON_START_MONTH` in `App/src/reports.js` if the club opens renewals earlier or later),
+and 12/31 of the current year from January 1 to September 30.
+- **Renewed** — expires on or after the target (already paid through next year-end).
+- **Left to renew** — still current (expires today or later) but before the target.
+- **Expired** — expiration date is before today (this replaces the older "Active but past expiration" card).
+Role/lifetime accounts (expiring 5+ years out) are left out. The Reports → Renewals & expirations table has the same three groups.
+
 ## Full-page charts (dashboard)
 
 The dashboard cards **New members by month**, **Households by membership type** and **New households by month** are

@@ -244,6 +244,32 @@
     return { expiredStillActive: expired, due30: due30, due60: due60, due90: due90, noExpiry: noExpiry, byExpirationMonth: months };
   }
 
+  // ---- renewal cycle ----------------------------------------------------------------
+  // ClubExpress memberships here expire on 12/31. Renewal season is assumed to start on
+  // October 1: from then until the next September, "renewal target" is the coming year-end
+  // after next-year renewals open (12/31 of next year before that, of this year after).
+  //   Oct 1 2026 .. Dec 31 2026 -> target 12/31/2027   (members who already renewed for 2027)
+  //   Jan 1 2027 .. Sep 30 2027 -> target 12/31/2027   (members paid up for 2027)
+  var RENEWAL_SEASON_START_MONTH = 10;
+  function renewalTarget(today) {
+    var p = parts(today);
+    return ymd(p.y + (p.m >= RENEWAL_SEASON_START_MONTH ? 1 : 0), 12, 31);
+  }
+  // Renewed = expires on/after the target; Left to renew = still current but expires before the
+  // target; Expired = expiration date already passed; No expiry = far-future (role/lifetime) dates.
+  function renewalStatus(members, today) {
+    var target = renewalTarget(today), horizon = addMonths(today, 60);
+    var out = { target: target, renewed: [], left: [], expired: [], noExpiry: [] };
+    members.forEach(function (m) {
+      var e = m.expirationDate;
+      if (!e || e > horizon) out.noExpiry.push(m);
+      else if (e < today) out.expired.push(m);
+      else if (e >= target) out.renewed.push(m);
+      else out.left.push(m);
+    });
+    return out;
+  }
+
   // ---- anniversaries & long service ------------------------------------------------
   function upcomingAnniversaries(members, today, days, suspect) {
     var t = parts(today), out = [];
@@ -413,6 +439,7 @@
     firstTuesday: firstTuesday, rangeLabel: rangeLabel, meetingPeriodEndingIn: meetingPeriodEndingIn, meetingPeriodAfter: meetingPeriodAfter,
     meetingPeriods: meetingPeriods, anniversariesInRange: anniversariesInRange, expiringInRange: expiringInRange,
     bucketsNew: bucketsNew, granularityFor: granularityFor,
+    renewalTarget: renewalTarget, renewalStatus: renewalStatus,
     snapshotSeries: snapshotSeries, snapshotChanges: snapshotChanges, bucketMembers: bucketMembers
   };
   if (typeof module === "object" && module.exports) module.exports = api;
