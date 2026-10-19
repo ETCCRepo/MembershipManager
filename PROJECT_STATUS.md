@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (late night, 2) — one Membership card
+- The duplicate Active members and Households cards (both showed 361/217) are merged into one **Membership** card on the dashboard and Monthly Meeting tab (value = active members/households; sub-text keeps the single + couple ÷ 2 breakdown). Deployed.
+
 ### 2026-10-19 (late night) — full-page chart view
 - The three dashboard chart cards (new members by month, households by type, new households by month) open a full-page view (`openChartPage` / `renderChartPage` in `app.js`, host `#chartPageHost`) with a period picker (1m, 3m, 6m, 1y, 2y, 5y, 10y, since 1958), CSV, print and a supporting table. `reports.js`: `bucketsNew`, `granularityFor`, `R.period` gained `24m`/`120m`. 62 Node tests pass. Deployed.
 

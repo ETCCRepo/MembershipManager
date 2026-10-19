@@ -329,7 +329,8 @@
     view.appendChild(el("div", { class: "loadedinfo", text: "Cards show members/households (households = single members + couple members ÷ 2) · reporting timezone " + R.TZ + " · today is " + L.formatDate(t) }));
 
     var grid = el("div", { class: "kpi-grid" });
-    grid.appendChild(kpi("Active members", mmhh(active), "members/households with status Active", function () { openList("Active members", active); }));
+    var hbMember = R.householdBreakdown(active);
+    grid.appendChild(kpi("Membership", mmhh(active), "members/households with status Active · " + num(hbMember.singleHouseholds) + " single + " + num(hbMember.couples.length) + " couple members ÷ 2", function () { openList("Membership (active members)", active); }));
     var others = [["Last month", "1m"], ["Last 3 months", "3m"], ["Last 6 months", "6m"], ["Last year", "12m"], ["Last 5 years", "60m"]];
     others.forEach(function (o) {
       var p = R.period(o[1], t, "rolling");
@@ -340,7 +341,6 @@
     var withJoin = pool.filter(function (m) { return m.joinDate; });
     var earliest = withJoin.reduce(function (a, m) { return !a || m.joinDate < a ? m.joinDate : a; }, "");
     var hpAct = peoplePoolFiltered().filter(R.isActive), hbAct = R.householdBreakdown(hpAct);
-    grid.appendChild(kpi("Households", mmhh(hpAct), num(hbAct.singleHouseholds) + " single + " + num(hbAct.couples.length) + " couple members ÷ 2", function () { openList("Active households (members)", hpAct); }));
     grid.appendChild(kpi("In records since 1958", mmhh(withJoin), "current roster with a join date; earliest " + (earliest ? L.formatDate(earliest) : "—") + ". Not a complete club history.", function () { openList("Roster members with a join date", withJoin); }));
     var ren = R.renewals(pool, t);
     grid.appendChild(kpi("Renewals due in 30 days", mmhh(ren.due30), mmhh(ren.due90) + " within 90 days", function () { openList("Renewals due within 30 days", ren.due30); }));
@@ -844,8 +844,7 @@
       var hAct = R.householdBreakdown(active), hNew = R.householdTotal(joined);
       var expNext = R.expiringInRange(active, nxt.start, nxt.end, t);
       var grid = el("div", { class: "kpi-grid" });
-      grid.appendChild(kpi("Active members", mmhh(active), "members/households today", function () { openList("Active members", active); }));
-      grid.appendChild(kpi("Households", mmhh(active), num(hAct.singleHouseholds) + " single + " + num(hAct.couples.length) + " couple members ÷ 2", function () { openList("Active households (members)", active); }));
+      grid.appendChild(kpi("Membership", mmhh(active), "members/households today · " + num(hAct.singleHouseholds) + " single + " + num(hAct.couples.length) + " couple members ÷ 2", function () { openList("Membership (active members)", active); }));
       grid.appendChild(kpi("New members", mmhh(joined), "members/households · " + L.formatDate(sel.start) + " to " + L.formatDate(effEnd), function () { openList(joinedTitle, joined); }));
       if (cmp) grid.appendChild(kpi("Vs previous month", mmhhDelta(joined, prevNm), mmhh(prevNm) + " new in " + L.formatDate(prev.start) + " to " + L.formatDate(prev.end) + (cmp.pct == null ? "" : " (" + (cmp.abs >= 0 ? "+" : "") + Math.round(cmp.pct * 10) / 10 + "%)"), function () { openList("New members in previous month", prevNm); }));
       grid.appendChild(kpi("Expiring next month", mmhh(expNext), L.formatDate(nxt.start) + " to " + L.formatDate(nxt.end), function () { openList("Expiring " + nxt.label, expNext); }));
