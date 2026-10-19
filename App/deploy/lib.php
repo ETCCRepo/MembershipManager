@@ -107,132 +107,161 @@ function membership_safe_inline_json($value) {
     return $json;
 }
 
-// "Last Name", "last_name", "LastName", "E-Mail" -> "lastname", "email".
-function membership_normalize_header($h) {
-    $h = preg_replace('/^\xEF\xBB\xBF/', '', (string)$h);
-    return str_replace([' ', '_', '-', '.', '/', '#'], ['', '', '', '', '', 'number'], strtolower(trim($h)));
+// ---- Sessions: HttpOnly + SameSite cookie (Secure over HTTPS) and an idle
+// timeout, so a forgotten browser tab doesn't stay logged in indefinitely.
+const MEMBERSHIP_SESSION_IDLE = 28800; // 8 hours
+
+function membership_session_start() {
+    $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+    session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => $https, 'httponly' => true, 'samesite' => 'Lax']);
+    session_start();
+    $now = time();
+    if (isset($_SESSION['membership_last_seen']) && $now - $_SESSION['membership_last_seen'] > MEMBERSHIP_SESSION_IDLE) {
+        session_unset();
+        session_destroy();
+        session_start();
+    }
+    $_SESSION['membership_last_seen'] = $now;
 }
 
-// Known fields -> accepted (normalized) header names. Same aliases the CarShow
-// members-import.php recognizes, plus the membership-specific dates/status.
-// Any column not listed here is still kept, under its original header, in
-// each member's "fields" map, so nothing in the export is dropped.
-function membership_field_aliases() {
+function membership_csrf_token() {
+    if (empty($_SESSION['membership_csrf'])) $_SESSION['membership_csrf'] = bin2hex(random_bytes(16));
+    return $_SESSION['membership_csrf'];
+}
+
+// ---- Data directory: snapshots, rejected-row files. Denied to HTTP both by
+// the app .htaccess (every .json) and by its own .htaccess written here.
+function membership_data_dir($sub = '') {
+    $dir = __DIR__ . '/data' . ($sub !== '' ? '/' . $sub : '');
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+        $root = __DIR__ . '/data/.htaccess';
+        if (!is_file($root)) @file_put_contents($root, "Require all denied\n<IfModule !mod_authz_core.c>\n  Deny from all\n</IfModule>\n");
+    }
+    return $dir;
+}
+
+// ---- Import validation. The browser already parsed and checked the CSV; this
+// is the server's own pass so nothing malformed or oversized is ever stored.
+const MEMBERSHIP_MAX_MEMBERS = 20000;
+const MEMBERSHIP_MAX_FIELD_LEN = 500;
+
+function membership_tracked_fields() {
+    return ['memberNumber', 'primaryMemberNumber', 'memberLevel', 'lastName', 'firstName', 'middleInitial', 'spouseFirstName',
+        'spouseLastName', 'email', 'phone', 'cellPhone', 'address', 'address2', 'city', 'state', 'zip', 'country',
+        'membershipType', 'status', 'joinDate', 'expirationDate', 'lastRenewalDate', 'autoRenew', 'company', 'year', 'model', 'color'];
+}
+
+function membership_date_fields() {
+    return ['joinDate', 'expirationDate', 'lastRenewalDate'];
+}
+
+function membership_clean_str($v) {
+    $s = is_scalar($v) ? (string)$v : '';
+    $s = str_replace("\0", '', $s);
+    if (!preg_match('//u', $s)) $s = mb_convert_encoding($s, 'UTF-8', 'UTF-8');
+    return mb_substr(trim($s), 0, MEMBERSHIP_MAX_FIELD_LEN);
+}
+
+// Returns a sanitized member record, or a string describing why it was refused.
+function membership_validate_member($m) {
+    if (!is_array($m)) return 'Not a member record.';
+    $out = [];
+    foreach (membership_tracked_fields() as $f) $out[$f] = membership_clean_str($m[$f] ?? '');
+    foreach (membership_date_fields() as $f) {
+        $out[$f . 'Raw'] = membership_clean_str($m[$f . 'Raw'] ?? '');
+        if ($out[$f] !== '' && (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $out[$f], $d) || !checkdate((int)$d[2], (int)$d[3], (int)$d[1]))) {
+            return "Invalid date in $f.";
+        }
+    }
+    if ($out['lastName'] === '' && $out['firstName'] === '') return 'No first or last name.';
+    $key = membership_clean_str($m['key'] ?? '');
+    if ($key === '') return 'Missing record key.';
+    $out['key'] = $key;
+    $out['household'] = membership_clean_str($m['household'] ?? '') ?: $key;
+    $out['isRole'] = !empty($m['isRole']);
+    $flags = [];
+    foreach ((is_array($m['flags'] ?? null) ? $m['flags'] : []) as $fl) { $c = membership_clean_str($fl); if ($c !== '') $flags[] = $c; }
+    $out['flags'] = array_slice($flags, 0, 20);
+    $fields = [];
+    if (is_array($m['fields'] ?? null)) {
+        foreach (array_slice($m['fields'], 0, 100, true) as $k => $v) {
+            $k = membership_clean_str($k);
+            if ($k === '' || in_array(strtolower(str_replace([' ', '-'], '_', $k)), ['login_name', 'date_of_birth', 'spouse_birthday', 'anniversary', 'gender', 'pronoun_name'], true)) continue;
+            $fields[$k] = membership_clean_str($v);
+        }
+    }
+    $out['fields'] = $fields;
+    return $out;
+}
+
+function membership_fingerprint($m) {
+    $vals = [];
+    foreach (membership_tracked_fields() as $f) $vals[] = (string)($m[$f] ?? '');
+    return md5(json_encode($vals, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+}
+
+// Applies an import to the stored roster. "full": the file is the whole
+// roster. "partial": merge by key. Members absent from a full file are
+// counted (notInFile) but never marked resigned — they simply are not in the
+// current roster; earlier snapshots still record them.
+function membership_apply_import($current, $incoming, $mode) {
+    $byKey = [];
+    foreach ($current as $m) $byKey[$m['key'] ?? ''] = $m;
+    $added = $updated = $unchanged = 0;
+    $seen = [];
+    foreach ($incoming as $m) {
+        $seen[$m['key']] = true;
+        if (!isset($byKey[$m['key']])) $added++;
+        elseif (membership_fingerprint($byKey[$m['key']]) === membership_fingerprint($m)) $unchanged++;
+        else $updated++;
+    }
+    $notInFile = 0;
+    if ($mode === 'full') {
+        foreach ($byKey as $k => $_) if (!isset($seen[$k])) $notInFile++;
+        $roster = $incoming;
+    } else {
+        $order = array_keys($byKey);
+        foreach ($incoming as $m) { if (!isset($byKey[$m['key']])) $order[] = $m['key']; $byKey[$m['key']] = $m; }
+        $roster = [];
+        foreach ($order as $k) $roster[] = $byKey[$k];
+    }
+    return ['roster' => $roster, 'added' => $added, 'updated' => $updated, 'unchanged' => $unchanged, 'notInFile' => $notInFile];
+}
+
+// What the Reports tab may treat as "a member" in a snapshot: active, non-role.
+function membership_snapshot_summary($roster, $id, $mode, $sourceFile, $counts, $rejectedCount) {
+    $keys = [];
+    $households = [];
+    foreach ($roster as $m) {
+        if (!empty($m['isRole']) || strcasecmp($m['status'] ?? '', 'Active') !== 0) continue;
+        $keys[] = $m['key'];
+        $households[$m['household'] ?? $m['key']] = true;
+    }
+    date_default_timezone_set('America/New_York');
     return [
-        'memberNumber' => ['membernumber', 'memberno', 'membernum', 'memberid', 'id', 'number'],
-        'lastName' => ['lastname', 'last', 'surname'],
-        'firstName' => ['firstname', 'first'],
-        'spouseFirstName' => ['spousefirstname', 'spouse', 'spousename'],
-        'email' => ['email', 'emailaddress', 'primaryemail'],
-        'phone' => ['phone', 'phonenumber', 'homephone', 'cellphone', 'mobilephone', 'primaryphone'],
-        'address' => ['address', 'address1', 'streetaddress', 'primaryaddress', 'primaryaddress1'],
-        'city' => ['city', 'primarycity'],
-        'state' => ['state', 'primarystate'],
-        'zip' => ['zip', 'zipcode', 'postalcode', 'primaryzip', 'primaryzipcode', 'primarypostalcode'],
-        'membershipType' => ['membershiptype', 'membertype', 'membershiplevel', 'level'],
-        'status' => ['status', 'memberstatus', 'membershipstatus'],
-        'joinDate' => ['joindate', 'datejoined', 'joined', 'membersince', 'memberjoindate', 'originaljoindate', 'startdate', 'membershipstartdate'],
-        'expirationDate' => ['expirationdate', 'expiredate', 'expires', 'expiration', 'renewaldate', 'membershipexpirationdate'],
-        'year' => ['year', 'corvetteyear', 'modelyear'],
-        'model' => ['model', 'corvettemodel'],
-        'color' => ['color', 'corvettecolor'],
+        'id' => $id, 'date' => date('Y-m-d'), 'at' => gmdate('c'), 'mode' => $mode, 'sourceFile' => $sourceFile,
+        'rows' => count($roster), 'people' => count($keys), 'households' => count($households),
+        'added' => $counts['added'], 'updated' => $counts['updated'], 'unchanged' => $counts['unchanged'],
+        'notInFile' => $counts['notInFile'], 'rejected' => $rejectedCount, 'keys' => $keys,
     ];
 }
 
-// Accepts the date shapes exports commonly use (2024-03-05, 3/5/2024,
-// 3/5/24, 03-05-2024, "Mar 5, 2024", "2024-03-05 10:15:00") and returns
-// "YYYY-MM-DD", or '' if the value isn't a recognizable date.
-function membership_parse_date($raw) {
-    $s = trim((string)$raw);
-    if ($s === '') return '';
-    if (preg_match('/^(\d{4})-(\d{1,2})-(\d{1,2})/', $s, $m)) {
-        $y = (int)$m[1]; $mo = (int)$m[2]; $d = (int)$m[3];
-    } elseif (preg_match('/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2}|\d{4})\b/', $s, $m)) {
-        $mo = (int)$m[1]; $d = (int)$m[2]; $y = (int)$m[3];
-        // Two-digit years: 00-49 -> 2000s, 50-99 -> 1900s.
-        if (strlen($m[3]) === 2) $y += $y < 50 ? 2000 : 1900;
-    } else {
-        $ts = strtotime($s);
-        if ($ts === false) return '';
-        $y = (int)date('Y', $ts); $mo = (int)date('n', $ts); $d = (int)date('j', $ts);
+function membership_snapshots() {
+    $dir = membership_data_dir('snapshots');
+    $out = [];
+    foreach (glob($dir . '/*.json') ?: [] as $f) {
+        if (substr($f, -9) === '.tmp.json' || substr($f, -10) === '.lock.json') continue;
+        $s = membership_read_json($f, null);
+        if ($s && isset($s['id'])) $out[] = $s;
     }
-    if (!checkdate($mo, $d, $y)) return '';
-    return sprintf('%04d-%02d-%02d', $y, $mo, $d);
+    usort($out, function ($a, $b) { return strcmp($a['id'], $b['id']); });
+    return array_slice($out, -120);
 }
 
-// Parses a membership export CSV file. Returns
-//   ['ok' => true, 'columns' => [...], 'members' => [...], 'found' => [...]]
-// or ['ok' => false, 'error' => '...'].
-// Uses fgetcsv (not per-line str_getcsv) so quoted values with embedded
-// newlines, like multi-line addresses, stay in one row.
-function membership_parse_csv($path) {
-    $raw = @file_get_contents($path);
-    if ($raw === false) return ['ok' => false, 'error' => 'Could not read the uploaded file.'];
-    // Excel often saves CSVs as Windows-1252; convert anything that isn't
-    // valid UTF-8 so names like "José" survive and json_encode can't fail.
-    if (!preg_match('//u', $raw)) {
-        $raw = function_exists('mb_convert_encoding')
-            ? mb_convert_encoding($raw, 'UTF-8', 'Windows-1252')
-            : (string)@iconv('Windows-1252', 'UTF-8//IGNORE', $raw);
-    }
-    $fh = fopen('php://temp', 'r+');
-    fwrite($fh, $raw);
-    rewind($fh);
-    $header = fgetcsv($fh, 0, ',', '"', '');
-    if (!$header || count(array_filter($header, function ($h) { return trim((string)$h) !== ''; })) === 0) {
-        fclose($fh);
-        return ['ok' => false, 'error' => 'That file looks empty.'];
-    }
-    $header[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string)$header[0]);
-    $header = array_map(function ($h) { return trim((string)$h); }, $header);
-
-    $aliases = membership_field_aliases();
-    $idx = array_fill_keys(array_keys($aliases), null);
-    foreach ($header as $i => $h) {
-        $n = membership_normalize_header($h);
-        foreach ($aliases as $field => $names) {
-            if ($idx[$field] === null && in_array($n, $names, true)) { $idx[$field] = $i; break; }
-        }
-    }
-    if ($idx['lastName'] === null || $idx['firstName'] === null) {
-        fclose($fh);
-        return ['ok' => false, 'error' => 'The CSV needs "First Name" and "Last Name" columns (any spacing/underscore/case).'];
-    }
-
-    $members = [];
-    while (($cols = fgetcsv($fh, 0, ',', '"', '')) !== false) {
-        if ($cols === [null] || trim(implode('', $cols)) === '') continue;
-        $member = [];
-        foreach ($idx as $field => $i) {
-            $member[$field] = $i !== null ? trim((string)($cols[$i] ?? '')) : '';
-        }
-        if ($member['lastName'] === '' && $member['firstName'] === '') continue;
-        $member['joinDateRaw'] = $member['joinDate'];
-        $member['joinDate'] = membership_parse_date($member['joinDate']);
-        $member['expirationDateRaw'] = $member['expirationDate'];
-        $member['expirationDate'] = membership_parse_date($member['expirationDate']);
-        $fields = [];
-        foreach ($header as $i => $h) {
-            if ($h === '') continue;
-            $fields[$h] = trim((string)($cols[$i] ?? ''));
-        }
-        $member['fields'] = $fields;
-        $members[] = $member;
-    }
-    fclose($fh);
-
-    if (!$members) return ['ok' => false, 'error' => 'No member rows were found under the header row.'];
-
-    usort($members, function ($a, $b) {
-        $c = strcasecmp($a['lastName'], $b['lastName']);
-        return $c !== 0 ? $c : strcasecmp($a['firstName'], $b['firstName']);
-    });
-    $labels = ['memberNumber' => 'Member Number', 'lastName' => 'Last Name', 'firstName' => 'First Name',
-        'spouseFirstName' => 'Spouse First Name', 'email' => 'Email', 'phone' => 'Phone', 'address' => 'Address',
-        'city' => 'City', 'state' => 'State', 'zip' => 'Zip', 'membershipType' => 'Membership Type',
-        'status' => 'Status', 'joinDate' => 'Join Date', 'expirationDate' => 'Expiration Date',
-        'year' => 'Corvette Year', 'model' => 'Model', 'color' => 'Color'];
-    $found = [];
-    foreach ($idx as $field => $i) if ($i !== null) $found[] = $labels[$field];
-    return ['ok' => true, 'columns' => array_values(array_filter($header, 'strlen')), 'members' => $members, 'found' => $found];
+// CSV cell safe against spreadsheet formula injection.
+function membership_csv_cell($v) {
+    $s = (string)$v;
+    if ($s !== '' && strpos("=+-@\t\r", $s[0]) !== false) $s = "'" . $s;
+    return (strpbrk($s, "\",\r\n") !== false) ? '"' . str_replace('"', '""', $s) . '"' : $s;
 }

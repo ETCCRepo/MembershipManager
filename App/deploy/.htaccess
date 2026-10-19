@@ -1,4 +1,5 @@
 DirectoryIndex index.php
+Options -Indexes
 
 # Same policy as the CarShow app: the whole app is one self-contained HTML
 # file (inline <script>/<style>, data: URI images), so nothing external is

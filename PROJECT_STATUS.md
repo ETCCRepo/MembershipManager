@@ -1,40 +1,46 @@
 # ETCC Membership Manager — Project Status
 
-**Last updated:** 2026-10-16 — Cloned and reviewed the repo, hardened CSV import / JSON writes / login throttling (committed, not deployed, PHP tests not yet run), and created the `/ETCCMM*` skills.
+**Last updated:** 2026-10-19 — Rebuilt into a ClubExpress-driven dashboard/reporting site (import preview, snapshots, charts, metric reports). Committed locally on `main`, **not pushed, not deployed**. Node tests pass (46); PHP changes are unexecuted (no `php` on this machine).
 
 ## What this is
 
-Membership roster + reports site for the East Tennessee Corvette Club, modeled on the CarShow app. Live at https://etccapps.com/apps/membershipmanager/. GitHub: https://github.com/ETCCRepo/MembershipManager (branch `main`).
+Membership dashboard + reports for the East Tennessee Corvette Club. Live location (once deployed): https://etccapps.com/apps/membershipmanager/. GitHub: https://github.com/ETCCRepo/MembershipManager (`main`). Modeled on CarShow/VetteFest (PHP + one-file JS bundle, FTP to Hostinger). Full operating docs, metric definitions and historical limits: `App/deploy/README.md`. Rules: `CLAUDE.md`.
 
-- **UI:** `App/src/` — `logic.js` (pure helpers, Node-testable), `app.js` (DOM), `styles.css`. `node App/build.js` inlines them into `App/ETCCMembership.html` (gitignored) and bumps the minor number in `App/version.json` (override: `MEMBERSHIP_VERSION=1.7`; skip bump: `MEMBERSHIP_NO_BUMP=1`).
-- **Server (PHP):** `App/deploy/`. `index.php` = password gate (`_login.html`) then serves `app-bundle.html` with `members-data.json` and the import log injected. `members-import.php` = CSV upload (replaces the roster). `lib.php` = JSON helpers, CSV parser, login throttling. `logout.php`. `.htaccess` denies direct access to `.json`, `lib.php`, `secrets.php`, etc.
-- **Deploy:** `App/deploy/ftp-deploy.sh` (FTPS via curl; needs `App/deploy/.ftp-credentials`, gitignored). Never uploads data files or `secrets.php` (upload `secrets.php` once by hand).
-- **Docs:** `CLAUDE.md`, `App/deploy/README.md` (CSV format, deploy steps).
-- **Rules:** never commit `secrets.php`, `.ftp-credentials`, or member data JSON (real PII). Test fixtures use obviously fake names.
+- **Browser** (`App/src/`): `csvimport.js` (CSV parse, column mapping, validation, matching, diff, export-safe CSV), `reports.js` (all metrics, periods, snapshots), `charts.js` (SVG bar/line/donut), `logic.js` (directory search/sort helpers), `app.js` (UI), `styles.css`. `node build.js` → `ETCCMembership.html` (gitignored; bumps `version.json` unless `MEMBERSHIP_NO_BUMP=1`).
+- **Server** (`App/deploy/`, PHP): `index.php` (login gate + injects roster/import log/snapshots + CSRF token), `members-import.php` (JSON import API + rejected-rows CSV), `lib.php`, `logout.php`, `_login.html`, `.htaccess`, `ftp-deploy.sh`.
+- **Tabs:** Dashboard (KPI cards, 4 charts, "About these numbers"), Reports (10 reports × periods/filters, chart + supporting table, click-through, CSV, print), Members (directory), Import (preview → confirm → history).
 
-## Skills (in `C:\Users\Admin\.claude\skills\`, modeled on ETCCSAM*)
+## Real export findings (ClubExpress "Additional Member Data", sample `answers35.csv`, not in repo)
 
-`/ETCCMMBegin`, `/ETCCMMEnd`, `/ETCCMMCheckpoint` (npm test → build → ftp-deploy → commit → push), `/ETCCMMAll`, `/ETCCMMBackup` (live data via FTPS + repo zip to `Z:\Backup\websites\MM\Backup`). Created this session; not yet exercised.
+381 rows × 40 columns, all `Active` (no lapsed members — it is a current snapshot only). Rows are ragged (317 have 37 cols; Corvette columns only on 64). One row = one **person**; `primary_member_number` = household (237 primary incl. 20 `Role` rows; 217 households excluding roles); `member_level` 1 = primary, 2 = spouse. 6 spouse rows share member numbers; 1 row has no member number. **146 members share join date 12/21/2022** (a data-load date) so join history before 2023 is not usable; only ~4 genuine older join dates. Membership types contain a damaged dash (U+FFFD). `Role` accounts expire 1/1/2066 and have no join date. The file includes `login_name`, `date_of_birth`, `gender` etc., which are dropped at import.
 
-## Checkpoint procedure
+## Decisions made (confirm with the owner)
 
-From `App/`: `npm test` (needs `node` and `php` on PATH) → `node build.js` → `bash deploy/ftp-deploy.sh` → commit changed files by name → `git push origin main`.
-
-## Known issues / open items
-
-- **`php` is not installed on the dev machine**, so `npm test` fails at the first PHP-backed test. None of the PHP changes below have been executed yet, including the new Windows-1252 CSV test.
-- **Nothing deployed from this machine.** `App/deploy/.ftp-credentials` and `secrets.php` don't exist locally; the hardening commit is not live.
-- Minor, unfixed (from the review): two-digit-year pivot makes "49" → 2049; `strtotime` fallback in `membership_parse_date` accepts words like "today"; no session timeout / explicit cookie flags (`Secure`, `SameSite`); `logout.php` works on GET; unparseable dates show raw text but sort with blanks; `members-import.php` requires `secrets.php` without using it.
-- Login lockout is per `REMOTE_ADDR`; behind a proxy/shared NAT all users share one bucket.
+- Role accounts (officer positions) are excluded from member counts by default (toggle available).
+- Active = Status "Active". Bulk-load join dates (≥15 and ≥5% of dated members share one date) are excluded from new-member counts/tenure and shown separately.
+- Totals over time come ONLY from saved full-import snapshots (`data/snapshots/`); partial imports never count. A member missing from a full file is "not in this file", never "resigned".
+- Import parsing runs in the browser (preview before anything is saved); the server re-validates and never stores raw CSV.
 
 ## Session log
 
-### 2026-10-16
-- Cloned the repo into `Z:\Backup\websites\MembershipManager` (HEAD was `9243615`), reviewed all code.
-- **Fixed (commit `ef9e4ef`, "Harden CSV import, JSON writes, and login"):**
-  1. *Non-UTF-8 CSVs* (Excel/Windows-1252): `membership_parse_csv` now reads the whole file, converts to UTF-8 if invalid, and parses from `php://temp`. `json_encode` calls use `JSON_INVALID_UTF8_SUBSTITUTE`; `membership_safe_inline_json` falls back to `null` instead of emitting `false` (previously a blank page). Test added in `App/test/run-tests.js`.
-  2. *Roster-wipe / non-atomic writes:* `membership_write_json` now encodes first, writes a `*.tmp.json` file, and `rename()`s over the target; returns false without touching the old file on failure. `membership_append_json_list` uses new `membership_with_lock()` (sidecar `*.lock.json`).
-  3. *Login throttling:* 5 failures per IP in 15 min → 15-min lockout (HTTP 429 + `Retry-After`). State in `App/deploy/login-attempts.json` (`membership_login_*` in `lib.php`, used by `index.php`); `_login.html` shows the lockout message. `.gitignore` and `.htaccess` comments updated.
-- Commit `ef9e4ef` is local; it was **one commit ahead of `origin/main`** when last checked (this doc's commit is pushed together with it).
-- Created the five `/ETCCMM*` skills (see above). Backup destination `Z:\Backup\websites\MM\Backup` was chosen by naming convention, not confirmed by the user.
-- Version in `App/version.json` unchanged (no build run).
+### 2026-10-19 — reporting rewrite
+- Added `csvimport.js`, `reports.js`, `charts.js`; rewrote `app.js`, `build.js` script list, `styles.css` (appended), `members-import.php` (now a JSON API), `lib.php` (atomic writes, validation, snapshots, session hardening incl. 8h idle timeout, HttpOnly/SameSite cookie), `index.php`, `.htaccess` (`Options -Indexes`), `README.md`, `CLAUDE.md`.
+- Removed the PHP CSV parser and its tests; tests are now Node-only (`App/test/run-tests.js`, 46 passing) using the synthetic fixture `test/fixtures/clubexpress-sample.csv` (`test/make-fixture.js` regenerates it).
+- Verified in the in-app browser with synthetic data: dashboard, all 10 reports render with charts and supporting tables, import preview (mapping, counts, rejected, flagged), phone-width layout without horizontal scroll, no console errors. Ran the real CSV through the logic read-only (aggregates only): 381 rows → 381 people, 0 rejected, 361 non-role people, 217 households, 146 bulk-date members flagged.
+- Skills `/ETCCMMBackup` (now also downloads `data/snapshots` + `data/batches`) and `/ETCCMMCheckpoint` (Node-only tests) updated.
+- Earlier today: hardening commit `ef9e4ef` (atomic JSON writes, login throttling) and `d056e5d` (this file) were pushed to origin.
+
+## Known issues / open items
+
+- **Not pushed, not deployed.** The owner required explicit authorization first. Needs `App/deploy/.ftp-credentials` and a hand-uploaded `secrets.php`; confirm the FTP account's remote folder is the app folder.
+- **PHP is unexecuted.** `php` is not installed here, so `lib.php`, `members-import.php`, `index.php` have only been reviewed, not run. Install PHP (or test on the server) and do an end-to-end import before relying on them: login → import → reload → snapshot appears → rejected-rows download.
+- Browser-pane checks used synthetic data and a static preview; the real import POST path (CSRF header, JSON size, `members-data.json` write) is unexercised.
+- Only one full import exists so far, so "Members over time" shows an explanatory message until a second full export is imported.
+- Demographic reports (age/gender) intentionally absent (columns dropped at import) — add only if the owner wants them.
+- Remaining minor items from the earlier review: no per-user accounts (single shared password); lockout is per `REMOTE_ADDR` (shared NAT shares a bucket); `logout.php` works on GET.
+- Unused asset `App/assets/reports-banner.jpg` (no longer embedded).
+- Chart accessibility: marks are keyboard-focusable with tooltips, but charts have not been tested with a screen reader.
+
+## Checkpoint procedure
+
+`/ETCCMMCheckpoint` (or by hand): `cd App && npm test` → `node build.js` → `bash deploy/ftp-deploy.sh` → commit named files → `git push origin main`. Do not run the deploy/push steps without the owner's go-ahead.

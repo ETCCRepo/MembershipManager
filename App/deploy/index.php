@@ -5,13 +5,13 @@
 // App/ETCCMembership.html, uploaded by ftp-deploy.sh) and injects the
 // current members-data.json and import log as an inline boot script. A new
 // member import is live on the next page load with no rebuild or redeploy.
-session_start();
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 
 // $PASSWORD_HASH comes from secrets.php (gitignored — see secrets.example.php).
 require __DIR__ . '/secrets.php';
 require __DIR__ . '/lib.php';
+membership_session_start();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login') {
     header('Content-Type: application/json');
@@ -55,7 +55,7 @@ $data = membership_read_json(membership_members_file(), []);
 $members = isset($data['members']) && is_array($data['members']) ? $data['members'] : [];
 $importLog = array_reverse(membership_read_json(membership_import_log_file(), []));
 
-$siteConfig = ['importUrl' => 'members-import.php', 'logoutUrl' => 'logout.php'];
+$siteConfig = ['importUrl' => 'members-import.php', 'logoutUrl' => 'logout.php', 'csrf' => membership_csrf_token()];
 $siteConfigScript = "<script>window.__membershipSite = " . membership_safe_inline_json($siteConfig) . ";</script>\n";
 $bundle = str_replace('<head>', "<head>\n" . $siteConfigScript, $bundle);
 
@@ -63,6 +63,7 @@ $bootScript = "\n<script>\n(function(){\n  function boot(){\n" .
     "    window.__membership.ingestMembers(" . membership_safe_inline_json($members) . ", " .
     membership_safe_inline_json($data['importedAt'] ?? null) . ");\n" .
     "    window.__membership.ingestImportLog(" . membership_safe_inline_json($importLog) . ");\n" .
+    "    window.__membership.ingestSnapshots(" . membership_safe_inline_json(membership_snapshots()) . ");\n" .
     "  }\n  if (document.readyState === \"loading\") document.addEventListener(\"DOMContentLoaded\", boot);\n  else boot();\n})();\n</script>\n";
 $bundle = str_replace('</body>', $bootScript . '</body>', $bundle);
 

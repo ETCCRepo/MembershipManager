@@ -14,13 +14,13 @@ function read(p) { return fs.readFileSync(path.join(HERE, p), "utf8"); }
 function safeJs(s) { return s.replace(/<\/script>/gi, "<\\/script>"); }
 
 var logoDataUri = "data:image/png;base64," + fs.readFileSync(path.join(HERE, "assets/ETCClogoWhiteBackground.png")).toString("base64");
-var reportsBannerDataUri = "data:image/jpeg;base64," + fs.readFileSync(path.join(HERE, "assets/reports-banner.jpg")).toString("base64");
-var reportsBannerScript = "window.__membershipReportsBanner = " + JSON.stringify(reportsBannerDataUri) + ";";
 
 var css = read("src/styles.css");
 var scripts = [
   read("src/logic.js"),
-  reportsBannerScript,
+  read("src/csvimport.js"),
+  read("src/reports.js"),
+  read("src/charts.js"),
   read("src/app.js")
 ].map(safeJs);
 
@@ -65,7 +65,7 @@ var html =
 '  <div id="app"></div>\n' +
 '</div>\n' +
 '<div id="detailHost"></div>\n' +
-'<div id="reportHost"></div>\n' +
+'<div id="listHost"></div>\n' +
 '<footer class="app-footer">\n' +
 '  <div class="footer-credit">v' + versionString + ' &middot; Built ' + fmtDateTime(builtAt) +
 ' &middot; Website by <a href="https://businesswebexpress.com" target="_blank" rel="noopener">Business Web Express</a>' +

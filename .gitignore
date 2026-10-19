@@ -16,3 +16,4 @@ App/deploy/member-import-history.json
 App/deploy/login-attempts.json
 App/deploy/*.lock.json
 App/deploy/*.tmp.json
+App/deploy/data/
