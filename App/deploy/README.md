@@ -118,8 +118,7 @@ Use the ClubExpress **Additional Member Data** report CSV. Open **Import**, choo
 ## What the numbers mean
 
 **Units — never mixed in one number.** *People* = one record per person (a couple is 2).
-*Households* = **single members + (couple members ÷ 2)**: every non-couple type counts 1, a Couple membership counts 1 for its two people (each person is half). A couple with only one record in the export therefore shows as .5. The Count selector switches every
-number and chart; each report states which it is using.
+*Households* = **single members + (couple members ÷ 2)**: every non-couple type counts 1, a Couple membership counts 1 for its two people (each person is half). A couple with only one record in the export therefore shows as .5. Every count card shows **members/households** (for example 361/217); charts and report tables say which unit they use. There is no People/Households switch.
 
 **Dates and time.** All dates are `YYYY-MM-DD` in **America/New_York**; ranges include both end dates.
 *Rolling* periods end today (last month = the day after one month ago through today).

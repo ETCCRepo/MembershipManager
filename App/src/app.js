@@ -50,6 +50,10 @@
   }
   function today() { return R.todayET(); }
   function unitWord(n) { return state.unit === "households" ? (n === 1 ? "household" : "households") : (n === 1 ? "person" : "people"); }
+  // Every count card shows members/households. households = single members + couple members / 2.
+  function mmhh(list) { return num(list.length) + "/" + num(R.householdTotal(list)); }
+  function signed(n) { var r = Math.round(n * 10) / 10; return (r > 0 ? "+" : "") + num(r); }
+  function mmhhDelta(cur, prev) { return signed(cur.length - prev.length) + "/" + signed(R.householdTotal(cur) - R.householdTotal(prev)); }
   function pct(a, b) { return b ? Math.round(a / b * 1000) / 10 + "%" : "—"; }
 
   // ---------- data ingest (called by index.php's boot script) ----------
@@ -170,9 +174,6 @@
     var f = state.filters;
     function opts(key, all) { return [["", all]].concat(distinct(key).map(function (v) { return [v === "(blank)" ? "(blank)" : v, v]; })); }
     var bar = el("div", { class: "toolbar filters no-print" });
-    if (withUnit) {
-      bar.appendChild(select("Count", [["people", "People"], ["households", "Households"]], state.unit, function (v) { state.unit = v; renderViews(); }));
-    }
     bar.appendChild(select("Status", opts("status", "All statuses"), f.status, function (v) { f.status = v; renderViews(); }));
     bar.appendChild(select("Type", opts("membershipType", "All types"), f.type, function (v) { f.type = v; renderViews(); }));
     bar.appendChild(select("State", opts("state", "All states"), f.state, function (v) { f.state = v; renderViews(); }));
@@ -317,25 +318,25 @@
     var active = pool.filter(R.isActive);
     var uw = unitWord;
     var latest = state.importedAt ? fmtDateTime(state.importedAt) : "—";
-    view.appendChild(el("div", { class: "loadedinfo", text: "Counts are " + (state.unit === "households" ? "households (primary memberships)" : "people (each spouse counted)") + " · reporting timezone " + R.TZ + " · today is " + L.formatDate(t) }));
+    view.appendChild(el("div", { class: "loadedinfo", text: "Cards show members/households (households = single members + couple members ÷ 2) · reporting timezone " + R.TZ + " · today is " + L.formatDate(t) }));
 
     var grid = el("div", { class: "kpi-grid" });
-    grid.appendChild(kpi("Active members", num(active.length), uw(active.length) + " with status Active", function () { openList("Active members", active); }));
+    grid.appendChild(kpi("Active members", mmhh(active), "members/households with status Active", function () { openList("Active members", active); }));
     var others = [["Last month", "1m"], ["Last 3 months", "3m"], ["Last 6 months", "6m"], ["Last year", "12m"], ["Last 5 years", "60m"]];
     others.forEach(function (o) {
       var p = R.period(o[1], t, "rolling");
       var cur = R.newMembers(pool, p.start, p.end, suspect).members, prev = R.newMembers(pool, p.prevStart, p.prevEnd, suspect).members;
       var cmp = R.compare(cur.length, prev.length);
-      grid.appendChild(kpi("New: " + o[0].toLowerCase(), num(cur.length), "vs prior period: " + cmp.text, function () { openList("New members — " + p.label, cur, p.start + " to " + p.end); }));
+      grid.appendChild(kpi("New: " + o[0].toLowerCase(), mmhh(cur), "prior period " + mmhh(prev) + " · change " + mmhhDelta(cur, prev), function () { openList("New members — " + p.label, cur, p.start + " to " + p.end); }));
     });
     var withJoin = pool.filter(function (m) { return m.joinDate; });
     var earliest = withJoin.reduce(function (a, m) { return !a || m.joinDate < a ? m.joinDate : a; }, "");
     var hpAct = peoplePoolFiltered().filter(R.isActive), hbAct = R.householdBreakdown(hpAct);
-    grid.appendChild(kpi("Households", num(hbAct.total), num(hbAct.singleHouseholds) + " single + " + num(hbAct.couples.length) + " couple members ÷ 2", function () { openList("Active households (members)", hpAct); }));
-    grid.appendChild(kpi("In records since 1958", num(withJoin.length), "current roster with a join date; earliest " + (earliest ? L.formatDate(earliest) : "—") + ". Not a complete club history.", function () { openList("Roster members with a join date", withJoin); }));
+    grid.appendChild(kpi("Households", mmhh(hpAct), num(hbAct.singleHouseholds) + " single + " + num(hbAct.couples.length) + " couple members ÷ 2", function () { openList("Active households (members)", hpAct); }));
+    grid.appendChild(kpi("In records since 1958", mmhh(withJoin), "current roster with a join date; earliest " + (earliest ? L.formatDate(earliest) : "—") + ". Not a complete club history.", function () { openList("Roster members with a join date", withJoin); }));
     var ren = R.renewals(pool, t);
-    grid.appendChild(kpi("Renewals due in 30 days", num(ren.due30.length), num(ren.due90.length) + " within 90 days", function () { openList("Renewals due within 30 days", ren.due30); }));
-    grid.appendChild(kpi("Active but past expiration", num(ren.expiredStillActive.length), "status Active, expiration date passed", function () { openList("Active but past expiration", ren.expiredStillActive); }));
+    grid.appendChild(kpi("Renewals due in 30 days", mmhh(ren.due30), mmhh(ren.due90) + " within 90 days", function () { openList("Renewals due within 30 days", ren.due30); }));
+    grid.appendChild(kpi("Active but past expiration", mmhh(ren.expiredStillActive), "status Active, expiration date passed", function () { openList("Active but past expiration", ren.expiredStillActive); }));
     grid.appendChild(kpi("Latest import", latest, state.importLog.length ? state.importLog[0].sourceFile || "" : ""));
     view.appendChild(grid);
     view.appendChild(caveats(pool));
@@ -452,7 +453,7 @@
     } else if (state.report === "households") {
       var hp = peoplePoolFiltered(), hb = R.householdBreakdown(hp), hf = R.period("12m", t, "rolling");
       spec.explain = "A household is counted as: single members + (couple members ÷ 2). Every non-couple membership type counts as one household; a Couple membership is two people and counts as one. " +
-        "This always counts households, whatever the Count selector says. A couple with only one record in the export shows as half a household.";
+        "This report counts households; cards elsewhere show members/households. A couple with only one record in the export shows as half a household.";
       var ht = R.householdsByType(hp);
       spec.sections.push({ title: "Households by membership type", chart: function () { return C.bar(ht, { ariaLabel: "Households by membership type", onSelect: function (x) { openList("Households: " + x.label, x.members); } }); },
         header: ["Membership type", "People", "Households"], rows: ht.map(function (x) { return [x.label, x.people, x.count]; }).concat([["Total", hp.length, hb.total]]), members: ht.map(function (x) { return x.members; }).concat([hp]),
@@ -835,12 +836,11 @@
       var hAct = R.householdBreakdown(active), hNew = R.householdTotal(joined);
       var expNext = R.expiringInRange(active, nxt.start, nxt.end, t);
       var grid = el("div", { class: "kpi-grid" });
-      grid.appendChild(kpi("Active members", num(active.length), "people today", function () { openList("Active members", active); }));
-      grid.appendChild(kpi("Households", num(hAct.total), num(hAct.singleHouseholds) + " single + " + num(hAct.couples.length) + " couple members ÷ 2", function () { openList("Active households (members)", active); }));
-      grid.appendChild(kpi("New members", num(joined.length), L.formatDate(sel.start) + " to " + L.formatDate(effEnd), function () { openList(joinedTitle, joined); }));
-      grid.appendChild(kpi("New households", num(hNew), "singles + couple members ÷ 2"));
-      if (cmp) grid.appendChild(kpi("Vs previous month", cmp.abs >= 0 ? "+" + num(cmp.abs) : num(cmp.abs), prevNm.length + " new members in " + L.formatDate(prev.start) + " to " + L.formatDate(prev.end) + (cmp.pct == null ? "" : " (" + (cmp.abs >= 0 ? "+" : "") + Math.round(cmp.pct * 10) / 10 + "%)"), function () { openList("New members in previous month", prevNm); }));
-      grid.appendChild(kpi("Expiring next month", num(expNext.length), L.formatDate(nxt.start) + " to " + L.formatDate(nxt.end), function () { openList("Expiring " + nxt.label, expNext); }));
+      grid.appendChild(kpi("Active members", mmhh(active), "members/households today", function () { openList("Active members", active); }));
+      grid.appendChild(kpi("Households", mmhh(active), num(hAct.singleHouseholds) + " single + " + num(hAct.couples.length) + " couple members ÷ 2", function () { openList("Active households (members)", active); }));
+      grid.appendChild(kpi("New members", mmhh(joined), "members/households · " + L.formatDate(sel.start) + " to " + L.formatDate(effEnd), function () { openList(joinedTitle, joined); }));
+      if (cmp) grid.appendChild(kpi("Vs previous month", mmhhDelta(joined, prevNm), mmhh(prevNm) + " new in " + L.formatDate(prev.start) + " to " + L.formatDate(prev.end) + (cmp.pct == null ? "" : " (" + (cmp.abs >= 0 ? "+" : "") + Math.round(cmp.pct * 10) / 10 + "%)"), function () { openList("New members in previous month", prevNm); }));
+      grid.appendChild(kpi("Expiring next month", mmhh(expNext), L.formatDate(nxt.start) + " to " + L.formatDate(nxt.end), function () { openList("Expiring " + nxt.label, expNext); }));
       area.appendChild(grid);
     }
 
@@ -958,9 +958,9 @@
     box.appendChild(el("div", { class: "hint", text: imp.mode === "full" ? "A full snapshot replaces the current roster and is saved as a dated point for history reports. Members missing from it are listed below but NOT treated as resigned or expired." : "A partial update changes only the members in the file. It is logged but never used for totals over time." }));
 
     var stats = el("div", { class: "kpi-grid small" }, [
-      kpi("Will be added", num(dfn.added.length), "new to this site"), kpi("Will be updated", num(dfn.updated.length), "same member, changed data"),
-      kpi("Unchanged", num(dfn.unchanged.length), ""), kpi("Rejected", num(b.rejected.length), "see reasons below"),
-      kpi("Not in this file", num(dfn.notInFile.length), imp.mode === "full" ? "stay unmarked; just absent" : "n/a for partial")
+      kpi("Will be added", mmhh(dfn.added), "new to this site"), kpi("Will be updated", mmhh(dfn.updated), "same member, changed data"),
+      kpi("Unchanged", mmhh(dfn.unchanged), ""), kpi("Rejected", num(b.rejected.length), "see reasons below"),
+      kpi("Not in this file", mmhh(dfn.notInFile), imp.mode === "full" ? "stay unmarked; just absent" : "n/a for partial")
     ]);
     box.appendChild(stats);
 

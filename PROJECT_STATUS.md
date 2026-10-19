@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (late) — members/households on every card
+- Owner request: every count card shows `members/households` (e.g. 361/217; households = single members + couple members ÷ 2) and the People/Households Count dropdown is removed. Helpers `mmhh`, `mmhhDelta` in `app.js`; dashboard, Monthly Meeting and import-preview cards use them (Monthly Meeting's separate New households card was merged into New members). The Households card now equals the Active members card; remove it if the owner finds it redundant. The owner's real import is live (361 members, 217 households, 146 bulk-date members excluded). Deployed.
+
 ### 2026-10-19 (night) — standard TableKit sort/filter header on all tables
 - Ported the club's TableKit header (CarShow `tkFillHeader`/`tkEnhance`) into `app.js` + `styles.css`: every table with a `<thead>` (Members directory, report and Monthly Meeting supporting tables, click-through lists, import history) has the ▼ Sort A→Z / Z→A / Clear Filter / value checklist panel; "Total" rows stay put and are re-summed. The directory uses `tkFillHeader` directly (`state.colChecked`); other tables use `tkEnhance(table, key)` with state in `state.tkTables`. Tables without a header row (column-mapping table, system check) are intentionally skipped. Verified in the browser; deployed.
 
