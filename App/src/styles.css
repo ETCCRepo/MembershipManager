@@ -256,3 +256,30 @@ table.grid.static tbody tr.click { cursor: pointer; }
 .ctl.stack input { padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 14px; font-family: inherit; font-weight: 400; }
 .pw-form { max-width: 520px; }
 .dev-view .panel table.grid td:first-child { color: var(--muted); font-weight: 600; width: 55%; }
+
+/* ---------- TableKit column headers (standard sort/filter header, from CarShow / Silent Auction Manager) ---------- */
+.tk-th-inner { display: flex; align-items: center; gap: 6px; }
+.tk-th-inner.tk-num { justify-content: flex-end; }
+.tk-th-label { flex: none; }
+.tk-th-inner[data-sort="asc"] .tk-th-label::after { content: " \25B2"; font-size: 0.7em; color: #1f5bb8; }
+.tk-th-inner[data-sort="desc"] .tk-th-label::after { content: " \25BC"; font-size: 0.7em; color: #1f5bb8; }
+.tk-th-inner[data-filtered="true"] .tk-drop-btn { color: #1f5bb8; }
+.tk-drop-btn { background: none; border: none; padding: 2px 4px; cursor: pointer; color: #667; font-size: 0.75rem; line-height: 1; border-radius: 3px; flex-shrink: 0; }
+.tk-drop-btn:hover { background: #dde5f0; color: #111; }
+.tk-dropdown { display: none; position: fixed; z-index: 1000; background: #fff; border: 1px solid #d5dbe5; border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.15); min-width: 180px; padding: 8px 0; font-weight: 400; text-align: left; text-transform: none; letter-spacing: 0; }
+.tk-dropdown.open { display: block; }
+.tk-sort-btn { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: none; padding: 7px 14px; cursor: pointer; font-size: 0.85rem; text-align: left; color: #222; font-family: inherit; }
+.tk-sort-btn:hover { background: #eef2f8; }
+.tk-sort-btn.active { color: #1f5bb8; font-weight: 600; }
+.tk-sort-btn:disabled { opacity: .4; cursor: default; background: none; }
+.tk-dropdown-divider { height: 1px; background: #d5dbe5; margin: 6px 0; }
+.tk-checklist-wrap { padding: 4px 0 6px; max-height: 200px; overflow-y: auto; }
+.tk-checklist-item { display: flex; align-items: center; gap: 8px; padding: 5px 14px; cursor: pointer; font-size: 0.85rem; color: #222; user-select: none; white-space: nowrap; }
+.tk-checklist-item:hover { background: #eef2f8; }
+.tk-checklist-item input[type="checkbox"] { margin: 0; cursor: pointer; accent-color: #1f5bb8; width: 14px; height: 14px; flex-shrink: 0; }
+.tk-checklist-all { font-weight: 600; border-bottom: 1px solid #d5dbe5; margin-bottom: 2px; }
+table.grid thead th .tk-th-inner { white-space: nowrap; }
+table.grid thead th:has(.tk-th-inner) { cursor: default; }
+table caption.tk-caption { caption-side: top; text-align: left; padding: 4px 0; }
+table.grid tbody tr.cc-total, table.grid tbody tr.cc-total td { font-weight: 700; background: #f2f4f7; }
+@media print { .tk-drop-btn, .tk-dropdown, .tk-caption { display: none !important; } }

@@ -230,7 +230,7 @@
     var exp = el("button", { class: "btn" }, ["⬇ CSV"]);
     exp.addEventListener("click", function () { var t = memberRows(st.members); download("members.csv", I.toCsv(t.header, t.rows)); });
     var body = [el("div", { class: "count", text: num(st.members.length) + " record" + (st.members.length === 1 ? "" : "s") + (st.note ? " · " + st.note : "") })];
-    body.push(st.members.length ? el("div", { class: "tablewrap modal-table" }, [el("table", { class: "grid" }, [thead, tbody])]) : el("div", { class: "empty-state", text: "No members." }));
+    body.push(st.members.length ? el("div", { class: "tablewrap modal-table" }, [tkEnhanceTable(el("table", { class: "grid" }, [thead, tbody]), st.tkKey || (st.tkKey = "list#" + (++tkSeq)))]) : el("div", { class: "empty-state", text: "No members." }));
     var modal = el("div", { class: "modal wide", role: "dialog", "aria-modal": "true", "aria-label": st.title }, [
       el("div", { class: "modal-head" }, [el("h3", { text: st.title }), exp, closeBtn]),
       el("div", { class: "modal-body" }, body)
@@ -520,7 +520,7 @@
     area.appendChild(el("div", { class: "report-head" }, [el("h2", { text: title }),
       el("div", { class: "count", text: (needsPeriod ? p.label + " · " + p.start + " to " + p.end + " · " : "") + "counts are " + (state.report === "households" ? "households" : unitWord(2)) + " · " + R.TZ + " · as of " + L.formatDate(t) })]));
     area.appendChild(el("div", { class: "panel explain" }, [el("strong", { text: "What this shows. " }), spec.explain]));
-    spec.sections.forEach(function (s) { area.appendChild(renderSection(s)); });
+    spec.sections.forEach(function (s, i) { area.appendChild(renderSection(s, "report:" + state.report + "#" + i)); });
     view.appendChild(area);
 
     var actions = el("div", { class: "toolbar no-print" });
@@ -537,7 +537,7 @@
     return view;
   }
 
-  function renderSection(s) {
+  function renderSection(s, key) {
     var panel = el("div", { class: "panel chart-panel" }, [el("h3", { text: s.title })]);
     if (s.chart) panel.appendChild(s.chart());
     var thead = el("thead", {}, [el("tr", {}, s.header.map(function (h) { return el("th", { text: h }); }))]);
@@ -545,19 +545,185 @@
     s.rows.forEach(function (r, i) {
       var tr = el("tr", {}, r.map(function (c, ci) { return el("td", { text: String(c), class: typeof c === "number" ? "num" : "" }); }));
       var list = s.members && s.members[i];
+      if (String(r[0]) === "Total") tr.className = "cc-total"; // stays at the bottom and is re-summed under filters
       if (list && list.length) {
-        tr.className = "click";
+        tr.className = (tr.className ? tr.className + " " : "") + "click";
         tr.setAttribute("title", "Click to list these members");
         tr.addEventListener("click", function () { if (s.detail) { state.detailMember = list[0]; renderDetailModal(); } else openList(s.title + " — " + r[0], list); });
       }
       tbody.appendChild(tr);
     });
     if (!s.rows.length) tbody.appendChild(el("tr", {}, [el("td", { colspan: String(s.header.length), class: "empty-state", text: "Nothing to show for this selection." })]));
-    var det = el("details", { class: "support", open: "open" }, [el("summary", { text: "Supporting table" }), el("div", { class: "tablewrap" }, [el("table", { class: "grid static" }, [thead, tbody])])]);
+    var det = el("details", { class: "support", open: "open" }, [el("summary", { text: "Supporting table" }), el("div", { class: "tablewrap" }, [tkEnhanceTable(el("table", { class: "grid static" }, [thead, tbody]), "section:" + key)])]);
     panel.appendChild(det);
     if (s.note) panel.appendChild(el("div", { class: "hint", text: s.note }));
     return panel;
   }
+
+  // ---------- TableKit column headers (the standard sort/filter header) ----------
+  // Ported from the CarShow app / Silent Auction Manager js/table.js. Every column title gets a ▼ button
+  // that opens a panel: Sort A→Z, Sort Z→A, Clear Filter, and a checklist of the column's values with
+  // (Select All). tkFillHeader() builds one header cell from a small config; tkEnhance() applies the
+  // header to an already-built static table (rows are hidden / reordered in place, "Total" rows stay put
+  // and are re-summed for the rows left showing). Sort/filter choices live in state.tkTables[key].
+  var tkSeq = 0;
+  function tkCloseAll() {
+    Array.prototype.forEach.call(document.querySelectorAll(".tk-dropdown.open"), function (p) { p.classList.remove("open"); });
+  }
+  function tkBindClose() {
+    if (window._tkCloseBound) return;
+    window._tkCloseBound = true;
+    document.addEventListener("click", tkCloseAll);
+  }
+  // cfg: { label, num, getSort() -> 1|-1|0, setSort(dir), getValues() -> [string], getChecked() -> Set|null,
+  //        setChecked(Set|null) }. Returns { refresh() } which re-reads the sort/filter marks.
+  function tkFillHeader(th, cfg) {
+    tkBindClose();
+    th.textContent = "";
+    var drop = el("button", { type: "button", class: "tk-drop-btn", "aria-label": "Sort and filter " + cfg.label, "aria-haspopup": "true" }, ["▼"]);
+    var inner = el("div", { class: "tk-th-inner" + (cfg.num ? " tk-num" : "") }, [el("span", { class: "tk-th-label", text: cfg.label }), drop]);
+    var asc = el("button", { type: "button", class: "tk-sort-btn" }, ["▲  Sort A → Z"]);
+    var desc = el("button", { type: "button", class: "tk-sort-btn" }, ["▼  Sort Z → A"]);
+    var clr = el("button", { type: "button", class: "tk-sort-btn" }, ["✕  Clear Filter"]);
+    var listWrap = el("div", { class: "tk-checklist-wrap" });
+    var panel = el("div", { class: "tk-dropdown" }, [asc, desc, clr, el("div", { class: "tk-dropdown-divider" }), listWrap]);
+    function refresh() {
+      clr.disabled = !cfg.getChecked();
+      var d = cfg.getSort();
+      if (d) inner.setAttribute("data-sort", d === 1 ? "asc" : "desc"); else inner.removeAttribute("data-sort");
+      asc.classList.toggle("active", d === 1);
+      desc.classList.toggle("active", d === -1);
+      inner.setAttribute("data-filtered", cfg.getChecked() ? "true" : "false");
+    }
+    function buildList() {
+      listWrap.innerHTML = "";
+      var vals = cfg.getValues().slice().sort(function (p, q) { return p.localeCompare(q, undefined, { numeric: true, sensitivity: "base" }); });
+      function item(text, checked, isAll) {
+        var cb = el("input", { type: "checkbox" });
+        cb.checked = checked;
+        listWrap.appendChild(el("label", { class: "tk-checklist-item" + (isAll ? " tk-checklist-all" : "") }, [cb, el("span", { text: text })]));
+        return cb;
+      }
+      var cur = cfg.getChecked();
+      var allCb = item("(Select All)", !cur, true);
+      allCb.addEventListener("change", function () { cfg.setChecked(allCb.checked ? null : new Set()); refresh(); buildList(); });
+      vals.forEach(function (v) {
+        var cb = item(v || "(blank)", !cur || cur.has(v), false);
+        cb.addEventListener("change", function () {
+          var set = cfg.getChecked() || new Set(vals);
+          if (cb.checked) set.add(v); else set.delete(v);
+          cfg.setChecked(set.size === vals.length ? null : set);
+          var a2 = listWrap.querySelector(".tk-checklist-all input");
+          if (a2) a2.checked = !cfg.getChecked();
+          refresh();
+        });
+      });
+    }
+    function sortClick(dir) { cfg.setSort(cfg.getSort() === dir ? 0 : dir); refresh(); panel.classList.remove("open"); }
+    asc.addEventListener("click", function () { sortClick(1); });
+    desc.addEventListener("click", function () { sortClick(-1); });
+    clr.addEventListener("click", function () { cfg.setChecked(null); refresh(); buildList(); });
+    drop.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var was = panel.classList.contains("open");
+      tkCloseAll();
+      if (!was) {
+        buildList();
+        var rect = drop.getBoundingClientRect();
+        panel.style.top = (rect.bottom + 4) + "px";
+        panel.style.left = Math.max(4, Math.min(rect.left, window.innerWidth - 240)) + "px";
+        panel.classList.add("open");
+      }
+    });
+    panel.addEventListener("click", function (e) { e.stopPropagation(); });
+    th.appendChild(inner);
+    th.appendChild(panel);
+    refresh();
+    return { refresh: refresh };
+  }
+
+  // Compares two cell texts: dates, then numbers/money, then text (numeric-aware).
+  function tkCompare(a, b) {
+    var D = /^\d{1,2}\/\d{1,2}\/\d{2,4}|^\d{4}-\d{2}-\d{2}/;
+    var da = D.test(a) ? Date.parse(a) : NaN, db = D.test(b) ? Date.parse(b) : NaN;
+    if (!isNaN(da) && !isNaN(db)) return da - db;
+    var NUM = /^-?\$?-?[\d,]*\.?\d+%?$/;
+    var na = parseFloat(a.replace(/[$,%]/g, "")), nb = parseFloat(b.replace(/[$,%]/g, ""));
+    if (!isNaN(na) && !isNaN(nb) && NUM.test(a.replace(/\s/g, "")) && NUM.test(b.replace(/\s/g, ""))) return na - nb;
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+  }
+
+  // Adds the column-header dropdown to one static table (needs a <thead> and a <tbody>).
+  function tkEnhance(table, key) {
+    var thead = table.tHead, tbody = table.tBodies[0];
+    if (!thead || !thead.rows.length || !tbody || table._tk) return;
+    table._tk = true;
+    state.tkTables = state.tkTables || {};
+    var st = state.tkTables[key] || (state.tkTables[key] = { col: null, dir: 1, checked: {} });
+    var hr = thead.rows[0];
+    function isFixed(r) {
+      if (r.classList.contains("cc-total")) return true;
+      return Array.prototype.some.call(r.cells, function (c) { return c.colSpan > 1; });
+    }
+    function cellText(r, i) { var c = r.cells[i]; return c ? String(c.textContent).trim() : ""; }
+    var all = Array.prototype.slice.call(tbody.rows);
+    all.forEach(function (r, i) { r._tkIdx = i; });
+    var fixed = all.filter(isFixed), data = all.filter(function (r) { return !isFixed(r); });
+    var totalRows = fixed.filter(function (r) { return r.classList.contains("cc-total"); });
+    var MONEY = /^-?\$[\d,]+(\.\d+)?$/, PLAIN = /^-?[\d,]*\.?\d+$/;
+    function colStart(r, idx) { var n = 0; for (var k = 0; k < idx; k++) n += r.cells[k].colSpan; return n; }
+    function numOf(t) { var n = parseFloat(String(t).replace(/[^0-9.\-]/g, "")); return isNaN(n) ? 0 : n; }
+    var cap = null;
+    function apply() {
+      data.sort(function (p, q) {
+        if (st.col == null) return p._tkIdx - q._tkIdx;
+        return tkCompare(cellText(p, st.col), cellText(q, st.col)) * st.dir;
+      });
+      var anchor = null;
+      for (var i = 0; i < tbody.rows.length; i++) { if (isFixed(tbody.rows[i])) { anchor = tbody.rows[i]; break; } }
+      data.forEach(function (r) { tbody.insertBefore(r, anchor); });
+      var filtered = false;
+      data.forEach(function (r) {
+        var show = Object.keys(st.checked).every(function (c) { var set = st.checked[c]; return !set || set.has(cellText(r, +c)); });
+        r.style.display = show ? "" : "none";
+        if (!show) filtered = true;
+      });
+      var visible = data.filter(function (r) { return r.style.display !== "none"; });
+      if (cap) cap.style.display = Object.keys(st.checked).length ? "" : "none";
+      totalRows.forEach(function (tr) {
+        Array.prototype.forEach.call(tr.cells, function (c, idx) {
+          if (c._tkOrig === undefined) c._tkOrig = c.textContent;
+          var orig = c._tkOrig.trim(), isMoney = MONEY.test(orig);
+          if (!isMoney && !PLAIN.test(orig)) return;
+          if (!filtered) { c.textContent = c._tkOrig; return; }
+          var col = colStart(tr, idx), sum = 0;
+          visible.forEach(function (r) { sum += numOf(cellText(r, col)); });
+          c.textContent = isMoney ? (sum < 0 ? "-" : "") + "$" + Math.abs(sum).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            : sum.toLocaleString(undefined, { maximumFractionDigits: 1 });
+        });
+      });
+    }
+    var heads = [];
+    var clearAll = el("button", { type: "button", class: "btn no-print", style: "font-size:12px; padding:2px 8px" }, ["✕ Clear all column filters"]);
+    clearAll.addEventListener("click", function () { st.checked = {}; apply(); heads.forEach(function (x) { x.refresh(); }); });
+    cap = table.createCaption();
+    cap.className = "tk-caption no-print";
+    cap.appendChild(clearAll);
+    Array.prototype.forEach.call(hr.cells, function (th, i) {
+      var label = th.textContent.trim();
+      if (!label) return;
+      heads.push(tkFillHeader(th, {
+        label: label, num: th.classList.contains("num"),
+        getSort: function () { return st.col === i ? st.dir : 0; },
+        setSort: function (d) { if (!d) st.col = null; else { st.col = i; st.dir = d; } apply(); heads.forEach(function (x) { x.refresh(); }); },
+        getValues: function () { var seen = []; data.forEach(function (r) { var v = cellText(r, i); if (seen.indexOf(v) === -1) seen.push(v); }); return seen; },
+        getChecked: function () { return st.checked[i] || null; },
+        setChecked: function (set) { if (set) st.checked[i] = set; else delete st.checked[i]; apply(); }
+      }));
+    });
+    apply();
+  }
+  function tkEnhanceTable(table, key) { tkEnhance(table, key); return table; }
 
   // ---------- Members directory ----------
   function buildMembersView() {
@@ -568,24 +734,42 @@
     var search = el("input", { type: "search", placeholder: "Search name, number, email, city…", value: state.search, "aria-label": "Search members" });
     var countEl = el("span", { class: "count" });
     var exp = el("button", { class: "btn" }, ["⬇ CSV"]);
-    view.appendChild(el("div", { class: "toolbar" }, [search, countEl, el("span", { class: "spacer" }), exp]));
+    var toolbar = el("div", { class: "toolbar" }, [search, countEl, el("span", { class: "spacer" }), exp]);
+    view.appendChild(toolbar);
     var columns = L.visibleColumns(state.members);
-    var thead = el("thead"), headRow = el("tr");
+    var thead = el("thead"), headRow = el("tr"), heads = [];
+    state.colChecked = state.colChecked || {};
+    function filterBase() {
+      var f = state.filters;
+      return R.pool(state.members, { includeRoles: true, status: f.status ? [f.status] : null, types: f.type ? [f.type] : null, states: f.state ? [f.state] : null, cities: f.city ? [f.city] : null })
+        .filter(function (m) { return state.includeRoles || !R.isRole(m); });
+    }
+    function refreshHeads() { heads.forEach(function (h) { h.refresh(); }); }
     columns.forEach(function (c) {
-      var th = el("th", { class: c.num ? "num" : "" }, [c.label]);
-      if (state.sortKey === c.key) th.appendChild(el("span", { class: "arrow", text: state.sortDir === "asc" ? "▲" : "▼" }));
-      th.addEventListener("click", function () {
-        if (state.sortKey === c.key) state.sortDir = state.sortDir === "asc" ? "desc" : "asc"; else { state.sortKey = c.key; state.sortDir = "asc"; }
-        renderViews();
-      });
+      var th = el("th", { class: c.num ? "num" : "" });
+      heads.push(tkFillHeader(th, {
+        label: c.label, num: !!c.num,
+        getSort: function () { return state.sortKey === c.key ? (state.sortDir === "asc" ? 1 : -1) : 0; },
+        setSort: function (d) {
+          if (!d) { state.sortKey = "lastName"; state.sortDir = "asc"; } else { state.sortKey = c.key; state.sortDir = d === 1 ? "asc" : "desc"; }
+          renderBody(); refreshHeads();
+        },
+        getValues: function () { var seen = {}; filterBase().forEach(function (m) { seen[L.displayValue(m, c)] = true; }); return Object.keys(seen); },
+        getChecked: function () { return state.colChecked[c.key] || null; },
+        setChecked: function (set) { if (set) state.colChecked[c.key] = set; else delete state.colChecked[c.key]; renderBody(); refreshHeads(); }
+      }));
       headRow.appendChild(th);
     });
     thead.appendChild(headRow);
+    var clrCols = el("button", { class: "btn" }, ["✕ Clear column filters"]);
+    clrCols.addEventListener("click", function () { state.colChecked = {}; renderBody(); refreshHeads(); });
+    toolbar.insertBefore(clrCols, toolbar.querySelector(".spacer"));
     var tbody = el("tbody"), table = el("table", { class: "grid" }, [thead, tbody]), shown = [];
     function renderBody() {
-      var f = state.filters;
-      var base = R.pool(state.members, { includeRoles: true, status: f.status ? [f.status] : null, types: f.type ? [f.type] : null, states: f.state ? [f.state] : null, cities: f.city ? [f.city] : null })
-        .filter(function (m) { return state.includeRoles || !R.isRole(m); });
+      var base = filterBase().filter(function (m) {
+        return columns.every(function (c) { var set = state.colChecked[c.key]; return !set || set.has(L.displayValue(m, c)); });
+      });
+      clrCols.style.display = Object.keys(state.colChecked).length ? "" : "none";
       shown = L.sortMembers(L.searchMembers(base, state.search), state.sortKey, state.sortDir);
       tbody.innerHTML = "";
       shown.forEach(function (m) {
@@ -681,7 +865,7 @@
       sections.push({ title: "Membership anniversaries next month (" + nxt.label + ") (" + an.length + ")", detail: true, header: ["Date", "Name", "Years"], rows: an.map(function (a) { return [L.formatDate(a.date), memberLine(a.member), a.years]; }), members: an.map(function (a) { return [a.member]; }),
         note: "Only trustworthy join dates are used; bulk-load and missing dates are skipped." });
     }
-    sections.forEach(function (s) { area.appendChild(renderSection(s)); });
+    sections.forEach(function (s, i) { area.appendChild(renderSection(s, "meeting#" + s.header[0] + i)); });
     if (!o.joined && !o.summary && !o.renewals && !o.anniversaries) area.appendChild(el("div", { class: "empty-state", text: "Tick at least one item above." }));
     view.appendChild(area);
 
@@ -834,10 +1018,10 @@
     var rows = state.importLog.map(function (e) {
       return [fmtDateTime(e.timestamp), e.sourceFile || "", e.mode === "partial" ? "Partial" : "Full", e.count, e.added == null ? "" : e.added, e.updated == null ? "" : e.updated, e.unchanged == null ? "" : e.unchanged, e.rejected == null ? "" : e.rejected];
     });
-    panel.appendChild(el("div", { class: "tablewrap" }, [el("table", { class: "grid static" }, [
+    panel.appendChild(el("div", { class: "tablewrap" }, [tkEnhanceTable(el("table", { class: "grid static" }, [
       el("thead", {}, [el("tr", {}, head.map(function (h) { return el("th", { text: h }); }))]),
       el("tbody", {}, rows.map(function (r) { return el("tr", {}, r.map(function (c) { return el("td", { text: String(c) }); })); }))
-    ])]));
+    ]), "importHistory")]));
     return panel;
   }
 

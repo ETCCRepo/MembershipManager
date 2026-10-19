@@ -169,6 +169,16 @@ number and chart; each report states which it is using.
 
 
 
+
+## Table headers (sort / filter)
+
+Every table with a header row uses the club's standard **TableKit** header (ported from CarShow / Silent Auction Manager):
+a ▼ button on each column title opens *Sort A → Z*, *Sort Z → A*, *Clear Filter* and a checklist of that column's values
+with *(Select All)*. Dates, numbers/money and text each sort correctly. A "Clear all column filters" button appears above
+filtered tables. "Total" rows stay at the bottom and are re-summed for the rows left showing. This covers the Members
+directory, every report's supporting table, the Monthly Meeting tables, the click-through member lists and the import
+history. Code: `tkFillHeader` / `tkEnhance` in `App/src/app.js`. Exports (CSV) always contain the full table.
+
 ## Monthly Meeting tab
 
 For the club's monthly meeting. A **meeting month** starts the **Wednesday after a month's first Tuesday** and ends

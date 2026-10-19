@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (night) — standard TableKit sort/filter header on all tables
+- Ported the club's TableKit header (CarShow `tkFillHeader`/`tkEnhance`) into `app.js` + `styles.css`: every table with a `<thead>` (Members directory, report and Monthly Meeting supporting tables, click-through lists, import history) has the ▼ Sort A→Z / Z→A / Clear Filter / value checklist panel; "Total" rows stay put and are re-summed. The directory uses `tkFillHeader` directly (`state.colChecked`); other tables use `tkEnhance(table, key)` with state in `state.tkTables`. Tables without a header row (column-mapping table, system check) are intentionally skipped. Verified in the browser; deployed.
+
 ### 2026-10-19 (evening) — Monthly Meeting tab, first deploy of the Developer/recovery work
 - New **Monthly Meeting** tab (`reports.js`: `firstTuesday`, `meetingPeriods`, `meetingPeriodAfter`, `anniversariesInRange`, `expiringInRange`; `app.js` `buildMeetingView`). Meeting month = Wednesday after the first Tuesday through the next first Tuesday, inclusive. Options: members joined (last month by default), summary, expirations, anniversaries next month; CSV + print. 58 Node tests pass.
 - **Standing instruction from the owner: always deploy after making a change** (`bash App/deploy/ftp-deploy.sh` after `npm test` + `node build.js`; smoke-test the live site afterwards). Pushing to GitHub is still only done when the owner says so.
