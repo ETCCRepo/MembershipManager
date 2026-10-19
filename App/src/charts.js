@@ -104,6 +104,60 @@
     return svg;
   }
 
+  // Time-scaled line chart. series: [{ name, color, dots, points: [{ date, count, tip }] }]; `dots` draws
+  // markers only (exact data points, e.g. saved imports) instead of a connected line.
+  function timeLine(series, opts) {
+    opts = opts || {};
+    var all = [];
+    series.forEach(function (s) { s.points.forEach(function (p) { all.push(p); }); });
+    if (!all.length) return empty(opts.emptyText || "Nothing to chart for this selection.");
+    function day(d) { var p = String(d).split("-"); return Date.UTC(+p[0], +p[1] - 1, +p[2]) / 86400000; }
+    var d0 = day(opts.start), d1 = day(opts.end);
+    if (d1 <= d0) d1 = d0 + 1;
+    var W = 720, H = opts.height || 300, m = { l: 52, r: 22, t: 34, b: 42 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+    var vals = all.map(function (p) { return p.count; });
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    var pad = Math.max(1, Math.round((hi - lo) * 0.15)), minV = Math.max(0, lo - pad), maxV = hi + pad;
+    if (maxV === minV) maxV = minV + 1;
+    function X(d) { return m.l + iw * (day(d) - d0) / (d1 - d0); }
+    function Y(v) { return m.t + ih - ih * ((v - minV) / (maxV - minV)); }
+    var svg = s("svg", { viewBox: "0 0 " + W + " " + H, class: "chart-svg", role: "img", "aria-label": opts.ariaLabel || "Line chart" });
+    for (var t = 0; t <= 4; t++) {
+      var v = minV + (maxV - minV) / 4 * t;
+      svg.appendChild(s("line", { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), class: "chart-grid" }));
+      svg.appendChild(s("text", { x: m.l - 6, y: Y(v) + 4, "text-anchor": "end", class: "chart-axis" }, fmt(Math.round(v * 10) / 10)));
+    }
+    var span = d1 - d0, MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    for (var k = 0; k <= 5; k++) {
+      var dt = new Date((d0 + span * k / 5) * 86400000);
+      var lab = span <= 100 ? MON[dt.getUTCMonth()] + " " + dt.getUTCDate() : span <= 1900 ? MON[dt.getUTCMonth()] + " " + dt.getUTCFullYear() : String(dt.getUTCFullYear());
+      svg.appendChild(s("text", { x: m.l + iw * k / 5, y: H - m.b + 18, "text-anchor": k === 0 ? "start" : k === 5 ? "end" : "middle", class: "chart-axis" }, lab));
+    }
+    series.forEach(function (sr, si) {
+      var color = sr.color || COLORS[si % COLORS.length], pts = sr.points.slice().sort(function (a, b) { return day(a.date) - day(b.date); });
+      if (!sr.dots && pts.length > 1) svg.appendChild(s("polyline", { points: pts.map(function (p) { return X(p.date) + "," + Y(p.count); }).join(" "), fill: "none", stroke: color, "stroke-width": 2.5, "stroke-linejoin": "round" }));
+      pts.forEach(function (p) {
+        var g = s("g", { class: "chart-point" });
+        var c = s("circle", { cx: X(p.date), cy: Y(p.count), r: sr.dots ? 6 : pts.length > 60 ? 2 : 3.5, fill: sr.dots ? "#fff" : color, stroke: color, "stroke-width": sr.dots ? 3 : 1.5 });
+        c.appendChild(s("title", {}, p.tip || (p.date + ": " + fmt(p.count))));
+        g.appendChild(c);
+        if (opts.onSelect) activate(g, p, opts.onSelect);
+        g.setAttribute("aria-label", p.tip || (p.date + ": " + fmt(p.count)));
+        svg.appendChild(g);
+      });
+    });
+    var lx = m.l;
+    series.forEach(function (sr, si) {
+      var color = sr.color || COLORS[si % COLORS.length];
+      if (sr.dots) svg.appendChild(s("circle", { cx: lx + 6, cy: 14, r: 5, fill: "#fff", stroke: color, "stroke-width": 3 }));
+      else svg.appendChild(s("line", { x1: lx, x2: lx + 14, y1: 14, y2: 14, stroke: color, "stroke-width": 3 }));
+      var label = s("text", { x: lx + 20, y: 18, class: "chart-axis" }, sr.name);
+      svg.appendChild(label);
+      lx += 28 + sr.name.length * 6.2;
+    });
+    return svg;
+  }
+
   // data: [{ label, count }] — drawn as a donut with an HTML legend.
   function donut(data, opts) {
     opts = opts || {};
@@ -146,5 +200,5 @@
     return wrap;
   }
 
-  root.MembershipCharts = { bar: bar, line: line, donut: donut, COLORS: COLORS };
+  root.MembershipCharts = { bar: bar, line: line, timeLine: timeLine, donut: donut, COLORS: COLORS };
 })(window);

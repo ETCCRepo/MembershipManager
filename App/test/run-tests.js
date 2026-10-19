@@ -301,6 +301,28 @@ test("new households by month sum to the households among the new members (chart
   eq(months.reduce(function (a, m) { return a + m.people; }, 0), nm.length);
 });
 
+console.log("Totals over time (current members by recorded join date)");
+test("sample dates: weekly, month-end and year-end, always starting at the start and ending at the end", function () {
+  eq(R.sampleDates("2026-09-20", "2026-10-19", "week"), ["2026-09-20", "2026-09-27", "2026-10-04", "2026-10-11", "2026-10-18", "2026-10-19"]);
+  eq(R.sampleDates("2026-07-20", "2026-10-19", "month"), ["2026-07-20", "2026-07-31", "2026-08-31", "2026-09-30", "2026-10-19"]);
+  eq(R.sampleDates("2016-10-20", "2026-10-19", "year").slice(0, 3), ["2016-10-20", "2016-12-31", "2017-12-31"]);
+  eq(R.sampleDates("2024-12-31", "2026-10-19", "month")[1], "2025-01-31");
+});
+test("a total never decreases over time, and the last point is today's full roster (= Membership card)", function () {
+  ["1m", "3m", "6m", "12m", "24m", "60m", "120m", "all"].forEach(function (k) {
+    var p = R.period(k, TODAY, "rolling"), act = peoplePool.filter(R.isActive);
+    var pts = R.totalsOverTime(act, p.start, p.end, R.granularityFor(k));
+    for (var i = 1; i < pts.length; i++) { assert.ok(pts[i].members >= pts[i - 1].members, k); assert.ok(pts[i].households >= pts[i - 1].households - 1e-9, k); }
+    eq([pts[pts.length - 1].members, pts[pts.length - 1].households], [act.length, R.householdTotal(act)]);
+  });
+});
+test("counts follow the recorded join dates, a bulk-load date is a visible jump, and undated members only count today", function () {
+  var ms = [{ joinDate: "2020-01-01", membershipType: "Single" }, { joinDate: "2022-12-21", membershipType: "Couple" }, { joinDate: "2022-12-21", membershipType: "Couple" }, { membershipType: "Single" }];
+  var pts = R.totalsOverTime(ms, "2022-01-01", "2023-06-30", "year");
+  eq(pts.map(function (x) { return x.date + ":" + x.members; }), ["2022-01-01:1", "2022-12-31:3", "2023-06-30:4"]);
+  eq(pts.map(function (x) { return x.households; }), [1, 2, 3]);
+});
+
 console.log("Renewal status (renewed / left to renew / expired)");
 test("renewal target is the year-end renewals are working toward (season starts Oct 1)", function () {
   eq(R.renewalTarget("2026-10-19"), "2027-12-31");

@@ -396,7 +396,9 @@
     charts.appendChild(chartPanel("Membership status", C.donut(byStatus, { ariaLabel: "Status", centerLabel: viewNoun(), onSelect: function (d) { openList("Status: " + d.label, d.members); } })));
     var byType = distV(pool, function (m) { return m.membershipType; });
     charts.appendChild(chartPanel("Membership type", C.donut(byType, { ariaLabel: "Membership type", centerLabel: viewNoun(), onSelect: function (d) { openList("Type: " + d.label, d.members); } })));
-    charts.appendChild(chartPanel("Active " + noun + " over time", snapshotChart(), "Built only from dated full imports saved by this site."));
+    var actPool = peoplePoolFiltered().filter(R.isActive), tdash = totalsData("12m", actPool);
+    if (state.view !== "households") charts.appendChild(chartPanel("Total members over time (last year)", totalsNode(tdash, "members", 260), "Current members by recorded join date; dots are exact saved-import totals. Click for all periods.", function () { openChartPage("totm"); }));
+    if (state.view !== "members") charts.appendChild(chartPanel("Total households over time (last year)", totalsNode(tdash, "households", 260), "Current households by recorded join date; dots are exact saved-import totals. Click for all periods.", function () { openChartPage("toth"); }));
     view.appendChild(charts);
     return view;
   }
@@ -1066,6 +1068,36 @@
     return panel;
   }
 
+  // ---------- Total members / households over time ----------
+  // Built from today's roster (current members by recorded join date) plus exact totals from the full
+  // imports saved by this site. The first is NOT the club's past membership: see totalsIntro().
+  function totalsData(preset, activePool) {
+    var t = today(), p = R.period(preset, t, "rolling");
+    var snaps = R.snapshotSeries(state.snapshots).filter(function (x) { return x.date >= p.start && x.date <= p.end; });
+    return { p: p, gran: R.granularityFor(preset), pts: R.totalsOverTime(activePool, p.start, p.end, R.granularityFor(preset)), snaps: snaps };
+  }
+  function totalsNode(td, kind, height) {
+    var isH = kind === "households", noun = isH ? "households" : "members";
+    var main = { name: "Current " + noun + " by recorded join date", color: C.COLORS[isH ? 3 : 1], points: td.pts.map(function (x) {
+      var v = isH ? x.households : x.members;
+      return { date: x.date, count: v, tip: L.formatDate(x.date) + ": " + num(v) + " " + noun, list: x.list };
+    }) };
+    var series = [main];
+    if (td.snaps.length) series.push({ name: "Saved imports (exact totals)", color: C.COLORS[0], dots: true, points: td.snaps.map(function (x) {
+      var v = isH ? x.households : x.count;
+      return { date: x.date, count: v, tip: "Saved import " + L.formatDate(x.date) + ": " + num(v) + " " + noun, list: [] };
+    }) });
+    return C.timeLine(series, { start: td.p.start, end: td.p.end, height: height || 280, ariaLabel: "Total " + noun + " over time",
+      onSelect: function (pt) { if (pt.list && pt.list.length) openList(pt.tip, pt.list); } });
+  }
+  function totalsIntro(td, suspect) {
+    var bulk = Object.keys(suspect).map(function (d) { return L.formatDate(d) + " (" + suspect[d] + " members)"; });
+    return "Each point is how many of today's active members had a recorded join date on or before that date (" + td.p.label + ", " + L.formatDate(td.p.start) + " to " + L.formatDate(td.p.end) + "). " +
+      "Members who have since left are not in today's export, so earlier points understate the club's real past totals" +
+      (bulk.length ? ", and the bulk-load join date" + (bulk.length > 1 ? "s " : " ") + bulk.join(", ") + (bulk.length > 1 ? " show" : " shows") + " up as a sudden jump that is not real growth" : "") + ". " +
+      "Dots are exact totals from full imports saved by this site; they are the only trustworthy past totals, and one more is added with each full import.";
+  }
+
   // ---------- Full-page chart view (opened from a dashboard chart card) ----------
   var CHART_PRESETS = [["1m", "Last month"], ["3m", "Last 3 months"], ["6m", "Last 6 months"], ["12m", "Last year"], ["24m", "Last 2 years"], ["60m", "Last 5 years"], ["120m", "Last 10 years"], ["all", "Since 1958"]];
   function openChartPage(kind) {
@@ -1085,7 +1117,16 @@
     var granWord = { week: "week", month: "month", year: "year" }[gran];
     var title, chart, header, rows, members, intro;
 
-    if (cp.kind === "htype") {
+    if (cp.kind === "totm" || cp.kind === "toth") {
+      var isHt = cp.kind === "toth", td = totalsData(cp.preset, pool.filter(R.isActive));
+      title = isHt ? "Total households over time" : "Total members over time";
+      intro = totalsIntro(td, suspect);
+      chart = totalsNode(td, isHt ? "households" : "members", 380);
+      header = ["Date", "Members", "Households", "Source"];
+      rows = td.pts.map(function (x, i) { return [L.formatDate(x.date), x.members, x.households, i === td.pts.length - 1 ? "today's roster" : i === 0 ? "period start" : "recorded join dates"]; });
+      members = td.pts.map(function (x) { return x.list; });
+      td.snaps.forEach(function (x) { rows.push([L.formatDate(x.date), x.count, x.households, "saved import (exact total)"]); members.push([]); });
+    } else if (cp.kind === "htype") {
       // Households by membership type among current active members who joined in the period.
       // "Since 1958" is every current active member, including those without a usable join date.
       var act = pool.filter(R.isActive);

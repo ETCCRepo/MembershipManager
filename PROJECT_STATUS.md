@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (late night, 4) — total members / households line charts
+- Owner asked for line charts of total members and total households for the 8 periods. A current export cannot give past totals, so each chart draws (1) a line of *today's active members by recorded join date* (labelled as understating the past; the 12/21/2022 bulk-load date shows as a jump) and (2) dots for exact totals from saved full imports. `charts.js` `timeLine`; `reports.js` `sampleDates`, `totalsOverTime`; `app.js` `totalsData/totalsNode/totalsIntro`, chart-page kinds `totm`/`toth`, two dashboard cards replacing the old 'Active members over time' card. 68 tests pass. Deployed.
+
 ### 2026-10-19 (late night, 3) — Show dropdown + renewal cards
 - Site-wide **Show: Members / Households / Both** dropdown in the tab bar (`state.view`, persisted in localStorage `mm.view`; helpers `viewKinds`, `viewCounts`, `viewNames`, `chartRows`, `distV`, `mmhh`, `mmhhDelta` in `app.js`). Cards, dashboard charts and report charts/tables follow it; household-only chart panels hide in Members view.
 - New dashboard cards **Renewed / Left to renew / Expired** (`R.renewalTarget`, `R.renewalStatus` in `reports.js`, 65 tests). Replaces the old 'Active but past expiration' card; the Renewals report table has the same groups. **Assumption to confirm with the owner: renewal season starts October 1** (`RENEWAL_SEASON_START_MONTH`); target = 12/31 of next year from Oct 1, else 12/31 of this year. `last_renewal_date` is mostly empty in the export so it is not used. Deployed.

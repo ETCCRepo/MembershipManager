@@ -196,6 +196,18 @@ and 12/31 of the current year from January 1 to September 30.
 - **Expired** — expiration date is before today (this replaces the older "Active but past expiration" card).
 Role/lifetime accounts (expiring 5+ years out) are left out. The Reports → Renewals & expirations table has the same three groups.
 
+## Total members / households over time (line charts)
+
+Dashboard cards **Total members over time** and **Total households over time** (shown according to the Show dropdown) open a full
+page with the eight periods (last month, 3/6 months, 1/2/5/10 years, since 1958), a supporting table and CSV/print. Two kinds of
+points are drawn, and they are **not the same thing**:
+- **Line — current members by recorded join date:** at each date, how many of *today's* active members had a join date on or
+  before it. People who left are not in the export, so earlier points **understate** the club's real past totals, and a join date
+  shared by many members (a data-load date such as 12/21/2022) appears as a **jump that is not real growth**. The last point is
+  today's full roster and equals the Membership card. Households use single members + couple members ÷ 2.
+- **Dots — saved imports (exact totals):** the true active members/households recorded at each full import. These are the only
+  trustworthy past totals; one is added with each full import (a single dot until a second full import exists).
+
 ## Full-page charts (dashboard)
 
 The dashboard cards **New members by month**, **Households by membership type** and **New households by month** are

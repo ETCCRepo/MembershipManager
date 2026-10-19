@@ -191,6 +191,37 @@
     }
     return out;
   }
+  // Dates to sample for a total-over-time line inside [start, end]: the start (baseline), then
+  // weekly / month-end / year-end dates, then the end.
+  function sampleDates(start, end, gran) {
+    var out = [start], d, y, m;
+    if (gran === "week") {
+      for (d = addDays(start, 7); d < end; d = addDays(d, 7)) out.push(d);
+    } else if (gran === "month") {
+      var p = parts(start);
+      for (y = p.y, m = p.m; ; ) {
+        var me = ymd(y, m, daysInMonth(y, m));
+        if (me >= end) break;
+        if (me > start) out.push(me);
+        if (++m > 12) { m = 1; y++; }
+      }
+    } else {
+      for (y = +start.slice(0, 4); ; y++) { var ye = y + "-12-31"; if (ye >= end) break; if (ye > start) out.push(ye); }
+    }
+    if (out[out.length - 1] !== end) out.push(end);
+    return out;
+  }
+  // Totals over time from TODAY's roster: at each date, how many current members had a recorded join
+  // date on or before it. This is not the club's past membership (people who left are not in the
+  // roster), and a bulk-load join date appears as a jump. The last point (today) counts everyone,
+  // including members with no join date, so it equals the Membership card.
+  function totalsOverTime(members, start, end, gran) {
+    var dated = members.filter(function (m) { return m.joinDate; });
+    return sampleDates(start, end, gran).map(function (d) {
+      var list = d === end ? members : dated.filter(function (m) { return m.joinDate <= d; });
+      return { date: d, members: list.length, households: householdTotal(list), list: list };
+    });
+  }
   // Bar width that keeps a chart readable: weeks for a month, years for 5+ years, else months.
   function granularityFor(preset) {
     return preset === "1m" ? "week" : (preset === "60m" || preset === "120m" || preset === "all") ? "year" : "month";
@@ -438,7 +469,7 @@
     householdBreakdown: householdBreakdown, householdsMonthly: householdsMonthly,
     firstTuesday: firstTuesday, rangeLabel: rangeLabel, meetingPeriodEndingIn: meetingPeriodEndingIn, meetingPeriodAfter: meetingPeriodAfter,
     meetingPeriods: meetingPeriods, anniversariesInRange: anniversariesInRange, expiringInRange: expiringInRange,
-    bucketsNew: bucketsNew, granularityFor: granularityFor,
+    bucketsNew: bucketsNew, granularityFor: granularityFor, sampleDates: sampleDates, totalsOverTime: totalsOverTime,
     renewalTarget: renewalTarget, renewalStatus: renewalStatus,
     snapshotSeries: snapshotSeries, snapshotChanges: snapshotChanges, bucketMembers: bucketMembers
   };
