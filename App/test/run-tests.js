@@ -301,6 +301,23 @@ test("new households by month sum to the households among the new members (chart
   eq(months.reduce(function (a, m) { return a + m.people; }, 0), nm.length);
 });
 
+console.log("Chart axes");
+test("every y-axis tick is a whole number and covers the data, for bar and line ranges", function () {
+  var savedWindow = global.window, savedDocument = global.document;
+  global.window = {}; global.document = { createElementNS: function () { return { setAttribute: function () {}, appendChild: function () {} }; }, createElement: function () { return {}; } };
+  try {
+    delete require.cache[require.resolve("../src/charts.js")];
+    require("../src/charts.js");
+    var sc = global.window.MembershipCharts.intScale;
+    [[0, 5, true], [0, 1, true], [0, 14, true], [0, 143, true], [0, 361, true], [0, 0.5, true], [176, 385, false], [290, 372, false], [2, 2, false], [216.5, 222, false], [0, 10000, true]].forEach(function (c) {
+      var r = sc(c[0], c[1], c[2]), ticks = [];
+      for (var v = r.min; v <= r.max + 1e-9; v += r.step) ticks.push(v);
+      assert.ok(ticks.every(function (x) { return Math.floor(x) === x; }), JSON.stringify(c) + " -> " + ticks);
+      assert.ok(r.min <= c[0] && r.max >= c[1] && ticks.length >= 2 && ticks.length <= 8, JSON.stringify(c));
+    });
+  } finally { global.window = savedWindow; global.document = savedDocument; if (savedWindow === undefined) delete global.window; if (savedDocument === undefined) delete global.document; }
+});
+
 console.log("Totals over time (current members by recorded join date)");
 test("sample dates: weekly, month-end and year-end, always starting at the start and ending at the end", function () {
   eq(R.sampleDates("2026-09-20", "2026-10-19", "week"), ["2026-09-20", "2026-09-27", "2026-10-04", "2026-10-11", "2026-10-18", "2026-10-19"]);

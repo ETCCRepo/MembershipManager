@@ -23,6 +23,16 @@
     return e;
   }
   function fmt(n) { return Number(n).toLocaleString("en-US", { maximumFractionDigits: 1 }); }
+  // Whole-number axis: a step of 1, 2, 5, 10, 20, 50... giving about five intervals, with the range
+  // rounded out to that step, so every tick label is an integer (never 1.3 or 332.8).
+  function intScale(lo, hi, zeroBase) {
+    var start = zeroBase ? 0 : Math.max(0, Math.floor(lo));
+    var raw = Math.max(1, (Math.ceil(hi) - start) / 5), p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+    var step = Math.max(1, (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p);
+    var min = Math.floor(start / step) * step, max = Math.ceil(hi / step) * step;
+    if (max <= min) max = min + step;
+    return { min: min, max: max, step: step };
+  }
   function niceMax(v) {
     if (v <= 5) return 5;
     var p = Math.pow(10, Math.floor(Math.log10(v))), f = v / p;
@@ -44,10 +54,10 @@
     if (!data.length || data.every(function (d) { return !d.count; })) return empty(opts.emptyText || "Nothing to chart for this selection.");
     var W = 720, H = opts.height || 280, m = { l: 44, r: 12, t: 16, b: data.length > 8 ? 70 : 40 };
     var iw = W - m.l - m.r, ih = H - m.t - m.b;
-    var max = niceMax(Math.max.apply(null, data.map(function (d) { return d.count; })));
+    var sc = intScale(0, Math.max.apply(null, data.map(function (d) { return d.count; })), true), max = sc.max;
     var svg = s("svg", { viewBox: "0 0 " + W + " " + H, class: "chart-svg", role: "img", "aria-label": opts.ariaLabel || "Bar chart" });
-    for (var t = 0; t <= 4; t++) {
-      var v = max / 4 * t, y = m.t + ih - ih * (v / max);
+    for (var v = 0; v <= max + 1e-9; v += sc.step) {
+      var y = m.t + ih - ih * (v / max);
       svg.appendChild(s("line", { x1: m.l, x2: W - m.r, y1: y, y2: y, class: "chart-grid" }));
       svg.appendChild(s("text", { x: m.l - 6, y: y + 4, "text-anchor": "end", class: "chart-axis" }, fmt(v)));
     }
@@ -78,13 +88,12 @@
     var iw = W - m.l - m.r, ih = H - m.t - m.b;
     var vals = points.map(function (p) { return p.count; });
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
-    var pad = Math.max(1, Math.round((hi - lo) * 0.2)), min = Math.max(0, lo - pad), max = hi + pad;
-    if (max === min) max = min + 1;
+    var pad = Math.max(1, Math.round((hi - lo) * 0.2)), sc = intScale(Math.max(0, lo - pad), hi + pad, false), min = sc.min, max = sc.max;
     var svg = s("svg", { viewBox: "0 0 " + W + " " + H, class: "chart-svg", role: "img", "aria-label": opts.ariaLabel || "Line chart" });
-    for (var t = 0; t <= 4; t++) {
-      var v = min + (max - min) / 4 * t, y = m.t + ih - ih * ((v - min) / (max - min));
+    for (var v = min; v <= max + 1e-9; v += sc.step) {
+      var y = m.t + ih - ih * ((v - min) / (max - min));
       svg.appendChild(s("line", { x1: m.l, x2: W - m.r, y1: y, y2: y, class: "chart-grid" }));
-      svg.appendChild(s("text", { x: m.l - 6, y: y + 4, "text-anchor": "end", class: "chart-axis" }, fmt(Math.round(v))));
+      svg.appendChild(s("text", { x: m.l - 6, y: y + 4, "text-anchor": "end", class: "chart-axis" }, fmt(v)));
     }
     var xs = points.map(function (p, i) { return m.l + (points.length === 1 ? iw / 2 : iw * i / (points.length - 1)); });
     var ys = points.map(function (p) { return m.t + ih - ih * ((p.count - min) / (max - min)); });
@@ -125,15 +134,13 @@
     m.t = 20 + (lrow + 1) * 16; ih = H - m.t - m.b;
     var vals = all.map(function (p) { return p.count; });
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
-    var pad = Math.max(1, Math.round((hi - lo) * 0.15)), minV = Math.max(0, lo - pad), maxV = hi + pad;
-    if (maxV === minV) maxV = minV + 1;
+    var pad = Math.max(1, Math.round((hi - lo) * 0.15)), sc = intScale(Math.max(0, lo - pad), hi + pad, false), minV = sc.min, maxV = sc.max;
     function X(d) { return m.l + iw * (day(d) - d0) / (d1 - d0); }
     function Y(v) { return m.t + ih - ih * ((v - minV) / (maxV - minV)); }
     var svg = s("svg", { viewBox: "0 0 " + W + " " + H, class: "chart-svg", role: "img", "aria-label": opts.ariaLabel || "Line chart" });
-    for (var t = 0; t <= 4; t++) {
-      var v = minV + (maxV - minV) / 4 * t;
+    for (var v = minV; v <= maxV + 1e-9; v += sc.step) {
       svg.appendChild(s("line", { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), class: "chart-grid" }));
-      svg.appendChild(s("text", { x: m.l - 6, y: Y(v) + 4, "text-anchor": "end", class: "chart-axis" }, fmt(Math.round(v * 10) / 10)));
+      svg.appendChild(s("text", { x: m.l - 6, y: Y(v) + 4, "text-anchor": "end", class: "chart-axis" }, fmt(v)));
     }
     var span = d1 - d0, MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     for (var k = 0; k <= 5; k++) {
@@ -205,5 +212,5 @@
     return wrap;
   }
 
-  root.MembershipCharts = { bar: bar, line: line, timeLine: timeLine, donut: donut, COLORS: COLORS };
+  root.MembershipCharts = { bar: bar, line: line, timeLine: timeLine, donut: donut, COLORS: COLORS, intScale: intScale };
 })(window);

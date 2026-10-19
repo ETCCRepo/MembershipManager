@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (late night, 7) — whole-number y axes
+- Owner: y axis must be whole numbers (the totals chart showed 332.8 / 280.5). `charts.js` `intScale(lo, hi, zeroBase)` now sets every bar, line and time-line axis (steps of 1, 2, 5, 10, 20, 50…, about five intervals, range rounded out to the step). Unit test added (72 tests); checked 234 axis labels across dashboard, full pages and all reports in the browser. Deployed.
+
 ### 2026-10-19 (late night, 6) — membership + households on one totals chart
 - Owner: rename the totals card to 'membership' and add households to the graph. The dashboard card / full page is now **Total membership over time** (Show: Both draws members and households lines plus exact saved-import dots on one chart; Members or Households draws one line, titled 'Total households over time' for households). Chart-page kind is now `tot`; `totalsNode(td, kind)` accepts members|households|both; the `timeLine` legend wraps onto extra rows. Deployed.
 
