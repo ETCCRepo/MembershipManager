@@ -834,7 +834,6 @@
     if (imp && imp.result) panel.appendChild(importResult(imp.result));
     else if (imp && imp.parsed) panel.appendChild(importPreview(imp));
     view.appendChild(makeCollapsible(panel, "import:main"));
-    view.appendChild(makeCollapsible(importHistory(), "import:history"));
     return view;
   }
 
@@ -949,8 +948,9 @@
     return box;
   }
 
-  function importHistory() {
-    var panel = el("div", { class: "panel" }, [el("h3", { text: "Import history" })]);
+  // inner: shown inside the Data Import panel (no panel box of its own).
+  function importHistory(inner) {
+    var panel = el("div", inner ? { class: "importhist" } : { class: "panel" }, [el(inner ? "h4" : "h3", { text: "Import history" })]);
     if (!state.importLog.length) { panel.appendChild(el("div", { class: "hint", text: "No imports yet." })); return panel; }
     var head = ["Imported", "File", "Type", "Via", "Rows", "Added", "Updated", "Unchanged", "Rejected"];
     var rows = state.importLog.map(function (e) {
@@ -1372,6 +1372,7 @@
         }))
       ]), "syncLog")]));
     }
+    syBox.appendChild(importHistory(true));
     view.appendChild(makeCollapsible(syBox, "dev:sync"));
 
     view.appendChild(makeCollapsible(el("div", { class: "panel" }, [el("h3", { text: "System check" }), el("div", { id: "devSystem" })]), "dev:system"));
