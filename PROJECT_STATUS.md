@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (late night, 8) — pages open with sections collapsed
+- Owner: open all pages with sections collapsed. `makeCollapsible(panel, key, opts)` + `sectionControls()` in `app.js`; open state in `state.open`, cleared by `selectTab()` and on report change (`state.secKeys` = sections on the current page). Applies to dashboard chart cards (chevron-only toggle; clicking the card still opens the full page), report and Monthly Meeting sections, Import history and Developer panels; Expand all / Collapse all on each such page; print expands everything. Not collapsible: KPI cards, Members table, full-page chart view, list popups. Deployed.
+
 ### 2026-10-19 (late night, 7) — whole-number y axes
 - Owner: y axis must be whole numbers (the totals chart showed 332.8 / 280.5). `charts.js` `intScale(lo, hi, zeroBase)` now sets every bar, line and time-line axis (steps of 1, 2, 5, 10, 20, 50…, about five intervals, range rounded out to the step). Unit test added (72 tests); checked 234 axis labels across dashboard, full pages and all reports in the browser. Deployed.
 

@@ -30,7 +30,7 @@
     report: "new",
     search: "", sortKey: "lastName", sortDir: "asc",
     detailMember: null, list: null, menuOpen: false,
-    imp: null, chartPage: null, view: loadView(), settings: { renewalStart: "10-01", renewalEnd: "12-31" },
+    imp: null, chartPage: null, open: {}, secKeys: [], view: loadView(), settings: { renewalStart: "10-01", renewalEnd: "12-31" },
     meetingEnd: null, meetingOpts: { joined: true, summary: true, renewals: true, anniversaries: true },
     dev: { loading: false, unlocked: false, system: null, message: "", error: "" }
   };
@@ -154,6 +154,7 @@
   // ---------- shell ----------
   function selectTab(id) {
     state.tab = id;
+    state.open = {};
     try { history.replaceState(null, "", "#" + id); } catch (e) { /* file:// previews */ }
     renderViews();
     window.scrollTo(0, 0);
@@ -162,9 +163,11 @@
     var app = $("#app");
     if (!app) return;
     app.innerHTML = "";
+    state.secKeys = [];
     app.appendChild(buildTabs());
     var view = state.tab === "reports" ? buildReportsView() : state.tab === "members" ? buildMembersView() :
       state.tab === "import" ? buildImportView() : state.tab === "developer" ? buildDeveloperView() : state.tab === "meeting" ? buildMeetingView() : buildDashboardView();
+    if (state.secKeys.length) view.insertBefore(sectionControls(), view.firstChild);
     app.appendChild(view);
     renderListModal();
     renderDetailModal();
@@ -331,6 +334,44 @@
     return box;
   }
 
+  // ---------- Collapsible sections ----------
+  // Every page opens with its sections collapsed. A section's open/closed state lives in state.open[key]
+  // (so it survives re-renders on the same page) and is cleared when you move to another page or report.
+  function makeCollapsible(panel, key, opts) {
+    opts = opts || {};
+    var h = panel.querySelector(":scope > h3");
+    if (!h) return panel;
+    var kids = Array.prototype.slice.call(panel.childNodes).filter(function (n) { return n !== h; });
+    panel.appendChild(el("div", { class: "sec-body" }, kids));
+    var btn = el("button", { type: "button", class: "sec-toggle no-print" });
+    h.insertBefore(btn, h.firstChild);
+    panel.classList.add("collapsible");
+    state.secKeys.push(key);
+    var name = h.textContent.replace(/[▸▾]/g, "").replace(/⤢ full page/, "").trim();
+    function sync() {
+      var open = !!state.open[key];
+      panel.classList.toggle("collapsed", !open);
+      btn.textContent = open ? "▾" : "▸";
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      btn.setAttribute("aria-label", (open ? "Collapse " : "Expand ") + name);
+    }
+    function toggle(e) {
+      if (e) e.stopPropagation();
+      if (state.open[key]) delete state.open[key]; else state.open[key] = true;
+      sync();
+    }
+    btn.addEventListener("click", toggle);
+    if (opts.headClick !== false) h.addEventListener("click", toggle);
+    sync();
+    return panel;
+  }
+  function sectionControls() {
+    var all = el("button", { class: "btn" }, ["▾ Expand all"]), none = el("button", { class: "btn" }, ["▸ Collapse all"]);
+    all.addEventListener("click", function () { state.secKeys.forEach(function (k) { state.open[k] = true; }); renderViews(); });
+    none.addEventListener("click", function () { state.open = {}; renderViews(); });
+    return el("div", { class: "sec-controls no-print" }, [all, none]);
+  }
+
   // ---------- Dashboard ----------
   function kpi(label, value, sub, onClick) {
     var d = el("div", { class: "kpi" + (onClick ? " click" : ""), tabindex: onClick ? "0" : null, role: onClick ? "button" : null }, [
@@ -350,7 +391,7 @@
       card.addEventListener("click", function (e) { if (e.target.closest && e.target.closest('[role="button"]')) return; onOpen(); });
       card.addEventListener("keydown", function (e) { if (e.target === card && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onOpen(); } });
     }
-    return card;
+    return makeCollapsible(card, "dash:" + title, { headClick: !onOpen });
   }
 
   function buildDashboardView() {
@@ -539,7 +580,7 @@
     if (!state.members.length) { view.appendChild(emptyRosterState()); return view; }
     var t = today(), pool = filteredPool(), suspect = R.suspectJoinDates(state.members), p = currentPeriod();
 
-    var repSel = select("Report", REPORTS, state.report, function (v) { state.report = v; renderViews(); });
+    var repSel = select("Report", REPORTS, state.report, function (v) { state.report = v; state.open = {}; renderViews(); });
     view.appendChild(el("div", { class: "toolbar no-print" }, [repSel]));
     var needsPeriod = state.report === "new";
     if (needsPeriod) {
@@ -607,7 +648,7 @@
     var det = el("details", { class: "support", open: "open" }, [el("summary", { text: "Supporting table" }), el("div", { class: "tablewrap" }, [tkEnhanceTable(el("table", { class: "grid static" }, [thead, tbody]), "section:" + key)])]);
     panel.appendChild(det);
     if (s.note) panel.appendChild(el("div", { class: "hint", text: s.note }));
-    return panel;
+    return makeCollapsible(panel, "sec:" + key);
   }
 
   // ---------- TableKit column headers (the standard sort/filter header) ----------
@@ -944,7 +985,7 @@
     if (imp && imp.result) panel.appendChild(importResult(imp.result));
     else if (imp && imp.parsed) panel.appendChild(importPreview(imp));
     view.appendChild(panel);
-    view.appendChild(importHistory());
+    view.appendChild(makeCollapsible(importHistory(), "import:history"));
     return view;
   }
 
@@ -1023,7 +1064,7 @@
       dl.addEventListener("click", function () {
         download("rejected-rows.csv", I.toCsv(["Row", "Reason"].concat(imp.header), b.rejected.map(function (r) { return [r.rowNumber, r.reason].concat(r.row); })));
       });
-      box.appendChild(el("details", { class: "support", open: "open" }, [el("summary", { text: num(b.rejected.length) + " rows rejected" }), el("ul", {}, rl), dl]));
+      box.appendChild(el("details", { class: "support" }, [el("summary", { text: num(b.rejected.length) + " rows rejected" }), el("ul", {}, rl), dl]));
     }
     if (dfn.notInFile.length && imp.mode === "full") {
       var nl = dfn.notInFile.slice(0, 10).map(function (m) { return el("li", { text: memberLine(m) + (m.memberNumber ? " (#" + m.memberNumber + ")" : "") }); });
@@ -1257,7 +1298,7 @@
         } else { msg.className = "errors"; msg.textContent = (j && j.error) || "Could not save."; if (j && j.httpStatus === 403) { state.dev.unlocked = false; renderViews(); } }
       }).catch(function () { btn.disabled = false; msg.className = "errors"; msg.textContent = "Could not reach the server. Nothing was changed."; });
     });
-    return form;
+    return makeCollapsible(form, "dev:" + title);
   }
   function renderSystemCheck() {
     var host = $("#devSystem");
@@ -1353,10 +1394,10 @@
         } else { rMsg.className = "errors"; rMsg.textContent = (j && j.error) || "Could not save."; if (j && j.httpStatus === 403) { state.dev.unlocked = false; renderViews(); } }
       }).catch(function () { rSave.disabled = false; rMsg.className = "errors"; rMsg.textContent = "Could not reach the server. Nothing was changed."; });
     });
-    view.appendChild(rForm);
+    view.appendChild(makeCollapsible(rForm, "dev:renewal"));
     rPreview();
 
-    view.appendChild(el("div", { class: "panel" }, [el("h3", { text: "System check" }), el("div", { id: "devSystem" })]));
+    view.appendChild(makeCollapsible(el("div", { class: "panel" }, [el("h3", { text: "System check" }), el("div", { id: "devSystem" })]), "dev:system"));
     setTimeout(renderSystemCheck, 0);
     return view;
   }

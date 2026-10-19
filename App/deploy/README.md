@@ -169,6 +169,14 @@ Use the ClubExpress **Additional Member Data** report CSV. Open **Import**, choo
 
 
 
+## Collapsed sections
+
+Every page opens with its sections **collapsed**: the dashboard's chart cards, each report and Monthly Meeting section, the Import history,
+and the Developer panels. Click a section's heading or its ▸ / ▾ button to open it, or use **Expand all / Collapse all** at the top of the
+page. What you open stays open while you work on that page (changing filters or the Show setting does not re-collapse it); switching pages or
+reports collapses everything again. On the dashboard, clicking a chart card itself still opens its full page — only the ▸ button toggles it.
+Count cards, the Members table and the full-page chart view are not collapsible. Printing always shows every section expanded.
+
 ## Table headers (sort / filter)
 
 Every table with a header row uses the club's standard **TableKit** header (ported from CarShow / Silent Auction Manager):
