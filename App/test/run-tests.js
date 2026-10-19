@@ -270,6 +270,37 @@ test("household report: 2-person households count households, not people", funct
   eq(two.count * 2, two.members.length);
 });
 
+console.log("Households = single members + couple members / 2");
+test("total follows the club's formula and agrees with the primary-number grouping when couples are complete", function () {
+  var singles = peoplePool.filter(function (m) { return !/couple/i.test(m.membershipType); }).length;
+  var couples = peoplePool.filter(function (m) { return /couple/i.test(m.membershipType); }).length;
+  eq(R.householdTotal(peoplePool), singles + couples / 2);
+  eq(R.householdTotal(peoplePool), R.pool(members, { unit: "households" }).length);
+});
+test("an unpaired couple member counts as half a household", function () {
+  eq(R.householdTotal([{ membershipType: "Couple" }]), 0.5);
+  eq(R.householdTotal([{ membershipType: "Couple" }, { membershipType: "Couple" }, { membershipType: "Single" }, { membershipType: "ETCC Only - Single" }]), 3);
+});
+test("households by type adds up to the total; people column adds up to head-count", function () {
+  var rows = R.householdsByType(peoplePool);
+  eq(rows.reduce(function (a, r) { return a + r.count; }, 0), R.householdTotal(peoplePool));
+  eq(rows.reduce(function (a, r) { return a + r.people; }, 0), peoplePool.length);
+  var couple = rows.filter(function (r) { return r.label === "Couple"; })[0];
+  eq(couple.count * 2, couple.people);
+});
+test("composition splits single and couple households", function () {
+  var b = R.householdBreakdown(peoplePool);
+  eq(b.singleHouseholds + b.coupleHouseholds, b.total);
+  eq(b.total, R.householdTotal(peoplePool));
+});
+test("new households by month sum to the households among the new members (chart = table)", function () {
+  var p = R.period("12m", TODAY, "rolling");
+  var months = R.householdsMonthly(peoplePool, p.start, p.end, suspect);
+  var nm = R.newMembers(peoplePool, p.start, p.end, suspect).members;
+  eq(months.reduce(function (a, m) { return a + m.count; }, 0), R.householdTotal(nm));
+  eq(months.reduce(function (a, m) { return a + m.people; }, 0), nm.length);
+});
+
 console.log("History: snapshots are the only source of totals over time");
 var snaps = [
   { id: "a", date: "2026-01-01", mode: "full", people: 3, households: 2, keys: ["n:1", "n:2", "n:3"] },

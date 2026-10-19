@@ -267,6 +267,33 @@
     });
   }
 
+  // ---- households, by the club's definition ------------------------------------
+  // households = single members + (couple members / 2). A Couple membership is two
+  // people, each counted as half; every other type (Single, Honorary - Single,
+  // ETCC Only - Single…) counts as one. Couples with only one record show as .5.
+  function isCouple(m) { return /couple/i.test(m.membershipType || ""); }
+  function householdWeight(m) { return isCouple(m) ? 0.5 : 1; }
+  function householdTotal(members) {
+    return members.reduce(function (a, m) { return a + householdWeight(m); }, 0);
+  }
+  // [{label, count: households, people, members}] per membership type.
+  function householdsByType(members) {
+    return distribution(members, function (m) { return m.membershipType; }).map(function (r) {
+      return { key: r.key, label: r.label, count: householdTotal(r.members), people: r.members.length, members: r.members };
+    }).sort(function (a, b) { return b.count - a.count || a.label.localeCompare(b.label); });
+  }
+  // {singles, couplePeople, coupleHouseholds, total} for the composition chart.
+  function householdBreakdown(members) {
+    var singles = members.filter(function (m) { return !isCouple(m); }), couples = members.filter(isCouple);
+    return { singles: singles, couples: couples, singleHouseholds: singles.length, coupleHouseholds: couples.length / 2, total: singles.length + couples.length / 2 };
+  }
+  // Each bucket's count is households (singles + couple members / 2); `people` is the head-count.
+  function householdsMonthly(members, start, end, suspect) {
+    return monthlyNew(members, start, end, suspect).map(function (m) {
+      return { key: m.key, label: m.label, count: householdTotal(m.members), people: m.count, members: m.members };
+    });
+  }
+
   // ---- snapshots (the only valid source of totals over time) ----------------------
   // snapshots: [{ id, date, mode:"full"|"partial", keys:[personKeys], households:[...] }]
   function snapshotSeries(snapshots) {
@@ -298,6 +325,8 @@
     suspectJoinDates: suspectJoinDates, reliableJoin: reliableJoin, newMembers: newMembers, monthlyNew: monthlyNew, yearlyNew: yearlyNew,
     distribution: distribution, tenureBucket: tenureBucket, TENURE_ORDER: TENURE_ORDER, zip5: zip5, renewals: renewals,
     upcomingAnniversaries: upcomingAnniversaries, longServing: longServing, dataQuality: dataQuality, householdSizes: householdSizes,
+    isCouple: isCouple, householdWeight: householdWeight, householdTotal: householdTotal, householdsByType: householdsByType,
+    householdBreakdown: householdBreakdown, householdsMonthly: householdsMonthly,
     snapshotSeries: snapshotSeries, snapshotChanges: snapshotChanges, bucketMembers: bucketMembers
   };
   if (typeof module === "object" && module.exports) module.exports = api;

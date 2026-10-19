@@ -25,7 +25,8 @@
     report: "new",
     search: "", sortKey: "lastName", sortDir: "asc",
     detailMember: null, list: null, menuOpen: false,
-    imp: null
+    imp: null,
+    dev: { loading: false, unlocked: false, system: null, message: "", error: "" }
   };
 
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
@@ -70,6 +71,13 @@
       states: f.state ? [f.state] : null, cities: f.city ? [f.city] : null
     });
   }
+  // People-level records under the current filters, regardless of the Count selector
+  // (household figures use the club's formula on people records).
+  function peoplePoolFiltered() {
+    var f = state.filters;
+    return R.pool(state.members, { includeRoles: state.includeRoles, unit: "people",
+      status: f.status ? [f.status] : null, types: f.type ? [f.type] : null, states: f.state ? [f.state] : null, cities: f.city ? [f.city] : null });
+  }
   function currentPeriod() { return R.period(state.preset, today(), state.periodMode, state.custom); }
   function distinct(key) {
     var seen = {};
@@ -107,6 +115,9 @@
     var imp = el("button", { class: "hdr-menu-item" }, ["⬆ Import Members"]);
     imp.addEventListener("click", function () { state.menuOpen = false; renderHeaderMenu(); selectTab("import"); });
     menu.appendChild(imp);
+    var dev = el("button", { class: "hdr-menu-item" }, ["🛠 Developer"]);
+    dev.addEventListener("click", function () { state.menuOpen = false; renderHeaderMenu(); openDeveloper(); });
+    menu.appendChild(dev);
     menu.appendChild(el("a", { class: "hdr-menu-item", href: SITE.logoutUrl }, ["⎋ Logout"]));
   }
 
@@ -123,7 +134,7 @@
     app.innerHTML = "";
     app.appendChild(buildTabs());
     var view = state.tab === "reports" ? buildReportsView() : state.tab === "members" ? buildMembersView() :
-      state.tab === "import" ? buildImportView() : buildDashboardView();
+      state.tab === "import" ? buildImportView() : state.tab === "developer" ? buildDeveloperView() : buildDashboardView();
     app.appendChild(view);
     renderListModal();
     renderDetailModal();
@@ -318,6 +329,8 @@
     });
     var withJoin = pool.filter(function (m) { return m.joinDate; });
     var earliest = withJoin.reduce(function (a, m) { return !a || m.joinDate < a ? m.joinDate : a; }, "");
+    var hpAct = peoplePoolFiltered().filter(R.isActive), hbAct = R.householdBreakdown(hpAct);
+    grid.appendChild(kpi("Households", num(hbAct.total), num(hbAct.singleHouseholds) + " single + " + num(hbAct.couples.length) + " couple members ÷ 2", function () { openList("Active households (members)", hpAct); }));
     grid.appendChild(kpi("In records since 1958", num(withJoin.length), "current roster with a join date; earliest " + (earliest ? L.formatDate(earliest) : "—") + ". Not a complete club history.", function () { openList("Roster members with a join date", withJoin); }));
     var ren = R.renewals(pool, t);
     grid.appendChild(kpi("Renewals due in 30 days", num(ren.due30.length), num(ren.due90.length) + " within 90 days", function () { openList("Renewals due within 30 days", ren.due30); }));
@@ -333,6 +346,10 @@
       ariaLabel: "New members by month", onSelect: function (d) { openList("New members — " + d.label, d.members); }
     }), "Click a bar to see who joined. Bulk-load join dates are left out."));
     var byStatus = R.distribution(pool, function (m) { return m.status; });
+    var hByType = R.householdsByType(hpAct);
+    charts.appendChild(chartPanel("Households by membership type", C.bar(hByType, { ariaLabel: "Households by membership type", onSelect: function (d) { openList("Households: " + d.label, d.members); } }), "Households = single members + couple members ÷ 2."));
+    var hMonths = R.householdsMonthly(peoplePoolFiltered(), p12.start, p12.end, suspect);
+    charts.appendChild(chartPanel("New households by month (last 12 months)", C.bar(hMonths, { ariaLabel: "New households by month", onSelect: function (d) { openList("New members — " + d.label, d.members); } }), "Each couple member counts as half a household."));
     charts.appendChild(chartPanel("Membership status", C.donut(byStatus, { ariaLabel: "Status", centerLabel: uw(2), onSelect: function (d) { openList("Status: " + d.label, d.members); } })));
     var byType = R.distribution(pool, function (m) { return m.membershipType; });
     charts.appendChild(chartPanel("Membership type", C.donut(byType, { ariaLabel: "Membership type", centerLabel: uw(2), onSelect: function (d) { openList("Type: " + d.label, d.members); } })));
@@ -432,10 +449,26 @@
         rows: ch.map(function (c) { return [c.from, c.to, c.retained, c.retentionPct == null ? "—" : Math.round(c.retentionPct * 10) / 10 + "%", c.joined.length, c.lost.length, c.reactivated.length]; }), members: ch.map(function () { return []; }),
         note: ch.length ? "“Not in newer file” means absent from the later full export — it may be a lapse, a resignation or a data issue; this site does not decide which." : "Needs at least two full imports. Import a fresh full export next time and this fills in." });
     } else if (state.report === "households") {
-      spec.explain = "Groups people by primary member number (the household). Household counts are always households, not people.";
-      var hs = R.householdSizes(R.pool(state.members, { includeRoles: state.includeRoles, status: state.filters.status ? [state.filters.status] : null, types: state.filters.type ? [state.filters.type] : null, states: state.filters.state ? [state.filters.state] : null, cities: state.filters.city ? [state.filters.city] : null }));
-      spec.sections.push({ title: "Households by size", chart: function () { return C.bar(hs, { ariaLabel: "Households by size", onSelect: function (x) { openList(x.label, x.members); } }); },
-        header: ["Household size", "Households", "People"], rows: hs.map(function (x) { return [x.label, x.count, x.members.length]; }), members: hs.map(function (x) { return x.members; }) });
+      var hp = peoplePoolFiltered(), hb = R.householdBreakdown(hp), hf = R.period("12m", t, "rolling");
+      spec.explain = "A household is counted as: single members + (couple members ÷ 2). Every non-couple membership type counts as one household; a Couple membership is two people and counts as one. " +
+        "This always counts households, whatever the Count selector says. A couple with only one record in the export shows as half a household.";
+      var ht = R.householdsByType(hp);
+      spec.sections.push({ title: "Households by membership type", chart: function () { return C.bar(ht, { ariaLabel: "Households by membership type", onSelect: function (x) { openList("Households: " + x.label, x.members); } }); },
+        header: ["Membership type", "People", "Households"], rows: ht.map(function (x) { return [x.label, x.people, x.count]; }).concat([["Total", hp.length, hb.total]]), members: ht.map(function (x) { return x.members; }).concat([hp]),
+        note: "Households = people for single types, people ÷ 2 for couple types." });
+      var comp = [{ label: "Single households", count: hb.singleHouseholds, members: hb.singles }, { label: "Couple households", count: hb.coupleHouseholds, members: hb.couples }];
+      spec.sections.push({ title: "Household composition", chart: function () { return C.donut(comp, { ariaLabel: "Household composition", centerLabel: "households", onSelect: function (x) { openList(x.label, x.members); } }); },
+        header: ["Kind", "Households", "People", "% of households"], rows: comp.map(function (x) { return [x.label, x.count, x.members.length, pct(x.count, hb.total)]; }).concat([["Total", hb.total, hp.length, "100%"]]), members: comp.map(function (x) { return x.members; }).concat([hp]) });
+      var hm = R.householdsMonthly(hp, hf.start, hf.end, suspect);
+      spec.sections.push({ title: "New households by month (last 12 months)", chart: function () { return C.bar(hm, { ariaLabel: "New households by month", onSelect: function (x) { openList("New members — " + x.label, x.members); } }); },
+        header: ["Month", "New households", "New people"], rows: hm.map(function (x) { return [x.label, x.count, x.people]; }), members: hm.map(function (x) { return x.members; }),
+        note: "Counts when each person joined, with each couple member as half a household, so a month can show .5 when partners' join dates fall in different months. Bulk-load join dates are excluded." });
+      var hs = R.snapshotSeries(state.snapshots).map(function (x) { return { label: x.date, count: x.households, members: [] }; });
+      spec.sections.push({ title: "Households over time (saved full imports)", chart: function () { return hs.length > 1 ? C.line(hs, { ariaLabel: "Households over time" }) : el("div", { class: "chart-empty", text: hs.length ? "Only one full import is saved so far; a trend line appears after the next one." : "No full import has been saved yet." }); },
+        header: ["Import date", "Households"], rows: hs.map(function (x) { return [x.label, x.count]; }), members: hs.map(function () { return []; }) });
+      var hz = R.householdSizes(hp);
+      spec.sections.push({ title: "Check: households grouped by primary member number", chart: null, header: ["Household size", "Households", "People"], rows: hz.map(function (x) { return [x.label, x.count, x.members.length]; }), members: hz.map(function (x) { return x.members; }),
+        note: "A second way to count households. It should equal the total above; if it doesn't, a couple has a missing or extra record." });
     } else if (state.report === "service") {
       var ls = R.longServing(pool, t, 10, suspect);
       var an = R.upcomingAnniversaries(pool, t, 60, suspect);
@@ -484,7 +517,7 @@
     var title = (REPORTS.filter(function (r) { return r[0] === state.report; })[0] || [0, ""])[1];
     var area = el("div", { class: "report-area" });
     area.appendChild(el("div", { class: "report-head" }, [el("h2", { text: title }),
-      el("div", { class: "count", text: (needsPeriod ? p.label + " · " + p.start + " to " + p.end + " · " : "") + "counts are " + unitWord(2) + " · " + R.TZ + " · as of " + L.formatDate(t) })]));
+      el("div", { class: "count", text: (needsPeriod ? p.label + " · " + p.start + " to " + p.end + " · " : "") + "counts are " + (state.report === "households" ? "households" : unitWord(2)) + " · " + R.TZ + " · as of " + L.formatDate(t) })]));
     area.appendChild(el("div", { class: "panel explain" }, [el("strong", { text: "What this shows. " }), spec.explain]));
     spec.sections.forEach(function (s) { area.appendChild(renderSection(s)); });
     view.appendChild(area);
@@ -492,7 +525,7 @@
     var actions = el("div", { class: "toolbar no-print" });
     var exp = el("button", { class: "btn" }, ["⬇ Export report CSV"]);
     exp.addEventListener("click", function () {
-      var out = [[title], [(needsPeriod ? p.label + " (" + p.start + " to " + p.end + ")" : "") + " counts are " + unitWord(2)]];
+      var out = [[title], [(needsPeriod ? p.label + " (" + p.start + " to " + p.end + ")" : "") + " counts are " + (state.report === "households" ? "households" : unitWord(2))]];
       spec.sections.forEach(function (s) { out.push([]); out.push([s.title]); out.push(s.header); s.rows.forEach(function (r) { out.push(r); }); });
       download("report-" + state.report + ".csv", out.map(function (r) { return r.map(I.csvCell).join(","); }).join("\r\n") + "\r\n");
     });
@@ -709,6 +742,130 @@
       el("tbody", {}, rows.map(function (r) { return el("tr", {}, r.map(function (c) { return el("td", { text: String(c) }); })); }))
     ])]));
     return panel;
+  }
+
+  // ---------- Developer (password protected) ----------
+  // Passwords are typed into password fields, sent once over HTTPS to
+  // developer.php, and never kept in `state`. The server stores only hashes.
+  var MIN_PASSWORD = 8;
+  function devApi(action, payload) {
+    var body = { action: action };
+    Object.keys(payload || {}).forEach(function (k) { body[k] = payload[k]; });
+    return fetch(SITE.developerUrl || "developer.php", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": SITE.csrf || "" }, body: JSON.stringify(body)
+    }).then(function (res) { return res.json().then(function (j) { j.httpStatus = res.status; return j; }); });
+  }
+  function applyDev(j, keepMessage) {
+    state.dev.loading = false;
+    if (j && j.ok) {
+      state.dev.unlocked = !!j.unlocked;
+      state.dev.system = j.system || null;
+      state.dev.error = "";
+      state.dev.message = keepMessage ? (j.message || "") : "";
+    } else {
+      state.dev.error = (j && j.error) || "Something went wrong.";
+      if (j && j.httpStatus === 403 && /locked/i.test(state.dev.error)) { state.dev.unlocked = false; state.dev.system = null; }
+    }
+    if (state.tab === "developer") renderViews();
+  }
+  function openDeveloper() {
+    state.dev.error = ""; state.dev.message = "";
+    state.dev.loading = true;
+    selectTab("developer");
+    devApi("status").then(function (j) { applyDev(j); }).catch(function () { state.dev.loading = false; state.dev.error = "Could not reach the server."; renderViews(); });
+  }
+  function passwordField(label, autocomplete) {
+    var input = el("input", { type: "password", autocomplete: autocomplete || "off", "aria-label": label, maxlength: "200" });
+    return { input: input, row: el("label", { class: "ctl stack" }, [label, input]) };
+  }
+  // Runs one password-changing form: validates, posts, clears the fields.
+  function passwordForm(title, help, fields, action, buildPayload, submitLabel) {
+    var msg = el("div", { class: "hint", role: "status" });
+    var btn = el("button", { class: "btn primary", type: "submit" }, [submitLabel]);
+    var form = el("form", { class: "panel pw-form", autocomplete: "off" }, [el("h3", { text: title }), el("div", { class: "hint", text: help })]);
+    fields.forEach(function (f) { form.appendChild(f.row); });
+    form.appendChild(el("div", { class: "toolbar" }, [btn]));
+    form.appendChild(msg);
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var newPw = fields[fields.length - 2].input.value, last = fields[fields.length - 1].input.value;
+      if (newPw.length < MIN_PASSWORD) { msg.className = "errors"; msg.textContent = "Use at least " + MIN_PASSWORD + " characters."; return; }
+      if (newPw !== last) { msg.className = "errors"; msg.textContent = "The two new passwords don't match."; return; }
+      btn.disabled = true; msg.className = "hint"; msg.textContent = "Saving…";
+      devApi(action, buildPayload()).then(function (j) {
+        btn.disabled = false;
+        if (j && j.ok) {
+          fields.forEach(function (f) { f.input.value = ""; });
+          state.dev.system = j.system || state.dev.system;
+          msg.className = "success"; msg.textContent = j.message || "Saved.";
+          renderSystemCheck();
+        } else { msg.className = "errors"; msg.textContent = (j && j.error) || "Could not save."; if (j && j.httpStatus === 403) { state.dev.unlocked = false; renderViews(); } }
+      }).catch(function () { btn.disabled = false; msg.className = "errors"; msg.textContent = "Could not reach the server. Nothing was changed."; });
+    });
+    return form;
+  }
+  function renderSystemCheck() {
+    var host = $("#devSystem");
+    if (!host) return;
+    host.innerHTML = "";
+    var s = state.dev.system;
+    if (!s) return;
+    var rows = [
+      ["PHP version", s.phpVersion], ["Data folder writable", s.dataFolderWritable ? "Yes" : "NO — imports cannot be saved"],
+      ["Roster file", s.rosterFilePresent ? s.rosterRecords + " records" : "None yet"], ["Last import", s.lastImport ? fmtDateTime(s.lastImport) : "—"],
+      ["Saved full-import snapshots", String(s.snapshots)], ["Import batches logged", String(s.importBatches)],
+      ["Website password stored in", s.websitePasswordSource], ["Developer password", s.developerPasswordIsInitial ? "Still the INITIAL password — change it" : "Changed"],
+      ["Passwords last changed", s.passwordsUpdatedAt ? fmtDateTime(s.passwordsUpdatedAt) : "Never"],
+      ["Website login idle timeout", s.sessionIdleHours + " hours"], ["Developer unlock idle timeout", s.developerIdleMinutes + " minutes"], ["Connection is HTTPS", s.https ? "Yes" : "No"], ["Emailed password recovery", s.recoveryEmail]
+    ];
+    host.appendChild(el("table", { class: "grid static" }, [el("tbody", {}, rows.map(function (r) { return el("tr", {}, [el("td", { text: r[0] }), el("td", { text: r[1] })]); }))]));
+  }
+
+  function buildDeveloperView() {
+    var view = el("div", { class: "view dev-view" });
+    var d = state.dev;
+    var head = el("div", { class: "report-head" }, [el("h2", { text: "Developer" })]);
+    view.appendChild(head);
+    if (d.loading) { view.appendChild(el("div", { class: "panel hint", text: "Loading…" })); return view; }
+    if (d.error && d.unlocked) view.appendChild(el("div", { class: "errors", text: d.error }));
+    if (!d.unlocked) {
+      var pw = passwordField("Developer password", "off");
+      var go = el("button", { class: "btn primary", type: "submit" }, ["Unlock"]);
+      var form = el("form", { class: "panel pw-form", autocomplete: "off" }, [el("h3", { text: "Developer password required" }),
+        el("div", { class: "hint", text: "This area changes passwords and shows server details. It stays unlocked for 30 idle minutes." }), pw.row, el("div", { class: "toolbar" }, [go])]);
+      if (d.error) form.appendChild(el("div", { class: "errors", text: d.error }));
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        if (!pw.input.value) return;
+        go.disabled = true;
+        devApi("unlock", { password: pw.input.value }).then(function (j) { pw.input.value = ""; applyDev(j); })
+          .catch(function () { d.error = "Could not reach the server."; renderViews(); });
+      });
+      view.appendChild(form);
+      setTimeout(function () { try { pw.input.focus(); } catch (e) { /* ignore */ } }, 0);
+      return view;
+    }
+    if (d.system && d.system.developerPasswordIsInitial) {
+      view.appendChild(el("div", { class: "errors", text: "The developer password is still the initial one. Change it below." }));
+    }
+    var lock = el("button", { class: "btn" }, ["🔒 Lock developer menu"]);
+    lock.addEventListener("click", function () { devApi("lock").then(function (j) { applyDev(j); }); });
+    view.appendChild(el("div", { class: "toolbar" }, [lock]));
+
+    var n1 = passwordField("New website password", "new-password"), n2 = passwordField("Confirm new website password", "new-password");
+    view.appendChild(passwordForm("Change website login password",
+      "The password everyone uses to open this site. Changing it signs out all other browsers immediately. At least " + MIN_PASSWORD + " characters.",
+      [n1, n2], "change_site_password", function () { return { newPassword: n1.input.value }; }, "Change website password"));
+
+    var c0 = passwordField("Current developer password", "current-password"), d1 = passwordField("New developer password", "new-password"), d2 = passwordField("Confirm new developer password", "new-password");
+    view.appendChild(passwordForm("Change developer password",
+      "The password for this Developer area. You must enter the current one. At least " + MIN_PASSWORD + " characters.",
+      [c0, d1, d2], "change_dev_password", function () { return { currentPassword: c0.input.value, newPassword: d1.input.value }; }, "Change developer password"));
+
+    view.appendChild(el("div", { class: "panel" }, [el("h3", { text: "System check" }), el("div", { id: "devSystem" })]));
+    setTimeout(renderSystemCheck, 0);
+    return view;
   }
 
   document.addEventListener("keydown", function (e) {

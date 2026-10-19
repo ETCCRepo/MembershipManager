@@ -24,11 +24,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
         exit;
     }
     $pw = (string)($_POST['password'] ?? '');
-    $ok = $pw !== '' && !empty($PASSWORD_HASH) && hash_equals($PASSWORD_HASH, crypt($pw, $PASSWORD_HASH));
+    $ok = membership_verify_password($pw, membership_site_hash());
     membership_login_record($ip, $ok);
     if ($ok) {
-        session_regenerate_id(true);
-        $_SESSION['membership_authenticated'] = true;
+        membership_login_success();
         echo json_encode(['success' => true]);
     } else {
         http_response_code(401);
@@ -37,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
     exit;
 }
 
-if (empty($_SESSION['membership_authenticated'])) {
+if (!membership_is_authenticated()) {
     readfile(__DIR__ . '/_login.html');
     exit;
 }
@@ -55,7 +54,7 @@ $data = membership_read_json(membership_members_file(), []);
 $members = isset($data['members']) && is_array($data['members']) ? $data['members'] : [];
 $importLog = array_reverse(membership_read_json(membership_import_log_file(), []));
 
-$siteConfig = ['importUrl' => 'members-import.php', 'logoutUrl' => 'logout.php', 'csrf' => membership_csrf_token()];
+$siteConfig = ['importUrl' => 'members-import.php', 'logoutUrl' => 'logout.php', 'developerUrl' => 'developer.php', 'csrf' => membership_csrf_token()];
 $siteConfigScript = "<script>window.__membershipSite = " . membership_safe_inline_json($siteConfig) . ";</script>\n";
 $bundle = str_replace('<head>', "<head>\n" . $siteConfigScript, $bundle);
 

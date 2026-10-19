@@ -21,7 +21,7 @@ function membership_json_out($status, $payload) {
     exit;
 }
 
-if (empty($_SESSION['membership_authenticated'])) {
+if (!membership_is_authenticated()) {
     membership_json_out(401, ['ok' => false, 'error' => 'Please log in first.']);
 }
 

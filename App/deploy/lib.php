@@ -232,16 +232,19 @@ function membership_apply_import($current, $incoming, $mode) {
 // What the Reports tab may treat as "a member" in a snapshot: active, non-role.
 function membership_snapshot_summary($roster, $id, $mode, $sourceFile, $counts, $rejectedCount) {
     $keys = [];
-    $households = [];
+    $singles = 0;
+    $couples = 0;
     foreach ($roster as $m) {
         if (!empty($m['isRole']) || strcasecmp($m['status'] ?? '', 'Active') !== 0) continue;
         $keys[] = $m['key'];
-        $households[$m['household'] ?? $m['key']] = true;
+        // Club definition: households = single members + (couple members / 2).
+        if (stripos((string)($m['membershipType'] ?? ''), 'couple') !== false) $couples++; else $singles++;
     }
     date_default_timezone_set('America/New_York');
     return [
         'id' => $id, 'date' => date('Y-m-d'), 'at' => gmdate('c'), 'mode' => $mode, 'sourceFile' => $sourceFile,
-        'rows' => count($roster), 'people' => count($keys), 'households' => count($households),
+        'rows' => count($roster), 'people' => count($keys), 'singles' => $singles, 'couples' => $couples,
+        'households' => $singles + $couples / 2,
         'added' => $counts['added'], 'updated' => $counts['updated'], 'unchanged' => $counts['unchanged'],
         'notInFile' => $counts['notInFile'], 'rejected' => $rejectedCount, 'keys' => $keys,
     ];
@@ -264,4 +267,148 @@ function membership_csv_cell($v) {
     $s = (string)$v;
     if ($s !== '' && strpos("=+-@\t\r", $s[0]) !== false) $s = "'" . $s;
     return (strpbrk($s, "\",\r\n") !== false) ? '"' . str_replace('"', '""', $s) . '"' : $s;
+}
+
+
+// ---- Passwords --------------------------------------------------------------
+// The website login hash comes from secrets.php until the Developer menu
+// changes it; after that data/auth.json (denied to HTTP) overrides it. The
+// developer password starts as the hash below (the owner's initial password,
+// which the Developer menu warns about until it is changed) and is then
+// stored in data/auth.json. Only hashes are ever stored.
+const MEMBERSHIP_DEV_DEFAULT_HASH = '$6$fe4930a259b7e006$9/Cydo7OnSprM1nAvJQVBMtQvcGJ1v3PXEgXoilHU0QSpDycyJ0pICDch2tM1HmsAtuYXJnPwgo4hixJjlzqV/';
+const MEMBERSHIP_DEV_IDLE = 1800; // developer unlock lasts 30 idle minutes
+const MEMBERSHIP_PASSWORD_MIN = 8;
+const MEMBERSHIP_PASSWORD_MAX = 200;
+
+function membership_auth_file() {
+    return membership_data_dir() . '/auth.json';
+}
+
+function membership_auth_read() {
+    return membership_read_json(membership_auth_file(), []);
+}
+
+// Readable random password (no 0/O/1/l/I) for the FTP-triggered recovery flow.
+function membership_generate_password($len = 14) {
+    $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    $out = '';
+    for ($i = 0; $i < $len; $i++) $out .= $chars[random_int(0, strlen($chars) - 1)];
+    return $out;
+}
+
+function membership_hash_password($pw) {
+    return crypt($pw, '$6$rounds=50000$' . bin2hex(random_bytes(8)) . '$');
+}
+
+function membership_verify_password($pw, $hash) {
+    $pw = (string)$pw;
+    if ($pw === '' || !is_string($hash) || strlen($hash) < 20) return false;
+    return hash_equals($hash, crypt($pw, $hash));
+}
+
+function membership_site_hash() {
+    global $PASSWORD_HASH;
+    $a = membership_auth_read();
+    return $a['siteHash'] ?? ($PASSWORD_HASH ?? '');
+}
+
+function membership_dev_hash() {
+    $a = membership_auth_read();
+    return $a['devHash'] ?? MEMBERSHIP_DEV_DEFAULT_HASH;
+}
+
+// Returns an error message, or '' if the new password is acceptable.
+function membership_password_problem($pw) {
+    $len = mb_strlen((string)$pw);
+    if ($len < MEMBERSHIP_PASSWORD_MIN) return 'Use at least ' . MEMBERSHIP_PASSWORD_MIN . ' characters.';
+    if ($len > MEMBERSHIP_PASSWORD_MAX) return 'That password is too long.';
+    return '';
+}
+
+// Merges $changes into auth.json under a lock. Changing the website password
+// bumps siteVersion, which signs out every other browser session.
+function membership_auth_update($changes) {
+    $file = membership_auth_file();
+    return membership_with_lock($file, function () use ($file, $changes) {
+        $a = membership_read_json($file, []);
+        if (isset($changes['siteHash'])) $a['siteVersion'] = (int)($a['siteVersion'] ?? 0) + 1;
+        foreach ($changes as $k => $v) $a[$k] = $v;
+        $a['updatedAt'] = gmdate('c');
+        return membership_write_json($file, $a) ? $a : false;
+    });
+}
+
+function membership_site_version() {
+    $a = membership_auth_read();
+    return (int)($a['siteVersion'] ?? 0);
+}
+
+function membership_login_success() {
+    session_regenerate_id(true);
+    $_SESSION['membership_authenticated'] = true;
+    $_SESSION['membership_auth_version'] = membership_site_version();
+}
+
+function membership_is_authenticated() {
+    return !empty($_SESSION['membership_authenticated'])
+        && ($_SESSION['membership_auth_version'] ?? -1) === membership_site_version();
+}
+
+function membership_dev_unlocked() {
+    return membership_is_authenticated() && ($_SESSION['membership_dev_until'] ?? 0) > time();
+}
+
+function membership_dev_touch() {
+    $_SESSION['membership_dev_until'] = time() + MEMBERSHIP_DEV_IDLE;
+}
+
+
+// ---- Emailed password-recovery links (see recover.php, mailer.php). Only a
+// SHA-256 hash of the one-time token is stored, never the token itself.
+const MEMBERSHIP_RECOVERY_TOKEN_TTL = 1800;     // emailed link is valid 30 minutes
+const MEMBERSHIP_RECOVERY_EMAIL_COOLDOWN = 900; // at most one recovery email per 15 minutes, from anyone
+
+function membership_recovery_token_file() {
+    return membership_data_dir() . '/recovery-token.json';
+}
+
+function membership_recovery_log_file() {
+    return membership_data_dir() . '/recovery-email-log.json';
+}
+
+// Seconds until another recovery email may be sent (0 = allowed now).
+function membership_recovery_email_wait() {
+    $log = membership_read_json(membership_recovery_log_file(), []);
+    $last = (int)($log['lastSentAt'] ?? 0);
+    return max(0, ($last + MEMBERSHIP_RECOVERY_EMAIL_COOLDOWN) - time());
+}
+
+// Replaces the pending token (so only the newest emailed link works) and
+// starts the send cooldown.
+function membership_recovery_token_store($token) {
+    $now = time();
+    return membership_write_json(membership_recovery_token_file(), [
+        'hash' => hash('sha256', $token), 'createdAt' => $now, 'expiresAt' => $now + MEMBERSHIP_RECOVERY_TOKEN_TTL,
+    ]) && membership_write_json(membership_recovery_log_file(), ['lastSentAt' => $now]);
+}
+
+function membership_recovery_token_valid($token) {
+    $rec = membership_read_json(membership_recovery_token_file(), []);
+    if (empty($rec['hash']) || empty($rec['expiresAt']) || time() > (int)$rec['expiresAt']) return false;
+    return is_string($token) && $token !== '' && hash_equals($rec['hash'], hash('sha256', $token));
+}
+
+// Used up by any confirm attempt, so a link is good for one try.
+function membership_recovery_token_consume() {
+    @unlink(membership_recovery_token_file());
+}
+
+// Replaces BOTH passwords with new random ones and signs out every session.
+// Returns ['site' => ..., 'dev' => ...] or false if nothing could be saved.
+function membership_recovery_reset_passwords() {
+    $site = membership_generate_password();
+    $dev = membership_generate_password();
+    $saved = membership_auth_update(['siteHash' => membership_hash_password($site), 'devHash' => membership_hash_password($dev)]);
+    return $saved ? ['site' => $site, 'dev' => $dev] : false;
 }

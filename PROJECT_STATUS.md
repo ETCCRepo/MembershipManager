@@ -23,6 +23,13 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (later) — Developer menu, recovery, household charts
+- Added **Developer** hamburger item (`developer.php` JSON API, `app.js` view): developer password (initial hash in `lib.php`), change website/developer passwords, system check. Hashes live in `data/auth.json` (overrides `secrets.php`); changing the site password bumps `siteVersion` and signs out other sessions. **Not deployed yet.**
+- Owner asked for a permanent always-accepted hardcoded-password backdoor; declined (permanent access to member PII). Built instead: `recover.php` + `mailer.php` — one-shot, time-limited recovery by (1) emailed link to `$RECOVERY_EMAIL` via SMTP/mail() and (2) FTP-uploaded trigger file `data/RESET-PASSWORDS`. Both reset BOTH passwords to random values shown once. SMTP settings go in `secrets.php` (see `secrets.example.php`; the owner must add them; none are configured). `deploy/ftp-deploy.sh` now uploads `developer.php`, `recover.php`, `mailer.php`.
+- Household definition (owner): **single members + couple members ÷ 2**. `reports.js` `householdTotal/householdsByType/householdBreakdown/householdsMonthly`; dashboard KPI + 2 charts; rebuilt Reports → Household membership (type bar, composition donut, new households by month, history line, primary-number cross-check). PHP snapshot summary now stores singles/couples and households by the same formula.
+- 51 Node tests pass. The PHP files were syntax-checked with the `php-parser` npm package (scratch folder, not in the repo) because PHP is not installed; they have **not been executed**. The SMTP client is untested against a real mail server.
+- Restored the template files `secrets.example.php` and `.ftp-credentials.example` that had been removed from the working folder (likely renamed when the real files were made).
+
 ### 2026-10-19 — reporting rewrite
 - Added `csvimport.js`, `reports.js`, `charts.js`; rewrote `app.js`, `build.js` script list, `styles.css` (appended), `members-import.php` (now a JSON API), `lib.php` (atomic writes, validation, snapshots, session hardening incl. 8h idle timeout, HttpOnly/SameSite cookie), `index.php`, `.htaccess` (`Options -Indexes`), `README.md`, `CLAUDE.md`.
 - Removed the PHP CSV parser and its tests; tests are now Node-only (`App/test/run-tests.js`, 46 passing) using the synthetic fixture `test/fixtures/clubexpress-sample.csv` (`test/make-fixture.js` regenerates it).
@@ -33,6 +40,7 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 ## Known issues / open items
 
 - **Not pushed, not deployed.** The owner required explicit authorization first. Needs `App/deploy/.ftp-credentials` and a hand-uploaded `secrets.php`; confirm the FTP account's remote folder is the app folder.
+- **Developer menu / recovery / mailer are undeployed and untested end to end**: configure `$SMTP` in the server's `secrets.php`, deploy, then try Developer unlock, both password changes, and `recover.php` (email and FTP paths).
 - **PHP is unexecuted.** `php` is not installed here, so `lib.php`, `members-import.php`, `index.php` have only been reviewed, not run. Install PHP (or test on the server) and do an end-to-end import before relying on them: login → import → reload → snapshot appears → rejected-rows download.
 - Browser-pane checks used synthetic data and a static preview; the real import POST path (CSRF header, JSON size, `members-data.json` write) is unexercised.
 - Only one full import exists so far, so "Members over time" shows an explanatory message until a second full export is imported.
