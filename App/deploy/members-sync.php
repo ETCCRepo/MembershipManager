@@ -6,6 +6,7 @@
 //
 //   POST JSON { members: [...], rejected: [...], sourceFile }   apply the roster as a full import
 //   POST JSON { status: "failed", error: "..." }                record that the sync could not run
+//   POST JSON { status: "poll" }                                 "Sync now" pressed? -> { requested: true } once
 //
 // A full import that is identical to the current roster writes nothing (no new snapshot or log row);
 // one smaller than half the current roster is refused as a probable truncated export.
@@ -43,6 +44,12 @@ $raw = file_get_contents('php://input', false, null, 0, 40 * 1024 * 1024 + 1);
 if ($raw === false || strlen($raw) > 40 * 1024 * 1024) sync_out(413, ['ok' => false, 'error' => 'That payload is too large.']);
 $body = json_decode($raw, true);
 if (!is_array($body)) sync_out(400, ['ok' => false, 'error' => 'Malformed request.']);
+
+// The small poll task on the club's computer asks whether "Sync now" was pressed; the first poll after a press claims it.
+if (($body['status'] ?? '') === 'poll') {
+    $trig = membership_sync_claim();
+    sync_out(200, ['ok' => true, 'requested' => $trig !== false, 'trigger' => $trig]);
+}
 
 // The task could not produce an export (ClubExpress signed out, page changed...): show it on the site.
 if (($body['status'] ?? '') === 'failed') {

@@ -524,11 +524,15 @@ function membership_settings_file() {
 }
 
 function membership_settings_defaults() {
-    return ['renewalStart' => '10-01', 'renewalEnd' => '12-31'];
+    return ['renewalStart' => '10-01', 'renewalEnd' => '12-31', 'syncTime' => '06:30'];
 }
 
 function membership_valid_mmdd($s) {
     return is_string($s) && preg_match('/^(\d{2})-(\d{2})$/', $s, $m) === 1 && checkdate((int)$m[1], (int)$m[2], 2001);
+}
+
+function membership_valid_hhmm($s) {
+    return is_string($s) && preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $s) === 1;
 }
 
 function membership_settings_read() {
@@ -536,7 +540,7 @@ function membership_settings_read() {
     $stored = membership_read_json(membership_settings_file(), []);
     $out = $defaults;
     foreach ($defaults as $k => $_) {
-        if (isset($stored[$k]) && membership_valid_mmdd($stored[$k])) $out[$k] = $stored[$k];
+        if (isset($stored[$k]) && ($k === 'syncTime' ? membership_valid_hhmm($stored[$k]) : membership_valid_mmdd($stored[$k]))) $out[$k] = $stored[$k];
     }
     return $out;
 }
@@ -643,6 +647,10 @@ function membership_sync_status_write($ok, $message, $extra = []) {
         $cur['ok'] = (bool)$ok;
         $cur['message'] = mb_substr((string)$message, 0, 300);
         if ($ok) $cur['lastSuccessAt'] = $now;
+        $trigger = (string)($cur['claimedTrigger'] ?? 'direct');
+        unset($cur['requestedAt'], $cur['claimedAt'], $cur['claimedTrigger']); // a finished run satisfies a pending request
+        membership_sync_log_add(['at' => $now, 'ok' => (bool)$ok, 'trigger' => $trigger, 'message' => mb_substr((string)$message, 0, 300),
+            'rows' => $extra['rows'] ?? null, 'added' => $extra['added'] ?? null, 'updated' => $extra['updated'] ?? null]);
         foreach (['changed', 'rows', 'added', 'updated', 'notInFile', 'rejected'] as $k) {
             if (array_key_exists($k, $extra)) $cur[$k] = $extra[$k];
         }
@@ -658,7 +666,61 @@ function membership_sync_public() {
         'tokenSet' => !empty($a['syncTokenHash']), 'tokenCreatedAt' => $a['syncTokenCreatedAt'] ?? null,
         'lastRunAt' => $s['lastRunAt'] ?? null, 'lastSuccessAt' => $s['lastSuccessAt'] ?? null, 'ok' => $s['ok'] ?? null,
         'message' => $s['message'] ?? '', 'changed' => $s['changed'] ?? null,
+        'requestedAt' => $s['requestedAt'] ?? null, 'claimedAt' => $s['claimedAt'] ?? null,
+        'syncTime' => membership_settings_read()['syncTime'],
     ];
+}
+
+// "Sync now" and the daily time: the website cannot reach into the club's computer, so the button only records a request. A small task
+// there asks members-sync.php every few minutes (status "poll"); the first poll after a request claims it and runs the
+// normal export. A finished run (membership_sync_status_write) clears the request.
+function membership_sync_request_set() {
+    $file = membership_sync_status_file();
+    return membership_with_lock($file, function () use ($file) {
+        $cur = membership_read_json($file, []);
+        unset($cur['claimedAt']);
+        $cur['requestedAt'] = gmdate('c');
+        return membership_write_json($file, $cur);
+    });
+}
+
+// The poll task asks this every few minutes. Returns 'manual' (Sync now pressed) or 'scheduled' (today's sync time has
+// passed and no run has finished since) once per run, else false. A claim older than 30 minutes is treated as lost.
+function membership_sync_claim() {
+    $file = membership_sync_status_file();
+    return membership_with_lock($file, function () use ($file) {
+        $cur = membership_read_json($file, []);
+        $now = time();
+        if (!empty($cur['claimedAt']) && $now - (int)strtotime($cur['claimedAt']) < 1800) return false;
+        $due = (new DateTime('today ' . membership_settings_read()['syncTime'], new DateTimeZone('America/New_York')))->getTimestamp();
+        $trigger = false;
+        if (!empty($cur['requestedAt'])) $trigger = 'manual';
+        elseif ($now >= $due && (empty($cur['lastRunAt']) || (int)strtotime($cur['lastRunAt']) < $due)) $trigger = 'scheduled';
+        if ($trigger === false) return false;
+        $cur['claimedAt'] = gmdate('c');
+        $cur['claimedTrigger'] = $trigger;
+        return membership_write_json($file, $cur) ? $trigger : false;
+    });
+}
+
+// One row per sync run (newest first, last 200), shown in Developer -> Daily sync.
+function membership_sync_log_file() {
+    return membership_data_dir() . '/sync-log.json';
+}
+
+function membership_sync_log_add($entry) {
+    $file = membership_sync_log_file();
+    return membership_with_lock($file, function () use ($file, $entry) {
+        $log = membership_read_json($file, []);
+        if (!is_array($log)) $log = [];
+        array_unshift($log, $entry);
+        return membership_write_json($file, array_slice($log, 0, 200));
+    });
+}
+
+function membership_sync_log_read($n = 60) {
+    $log = membership_read_json(membership_sync_log_file(), []);
+    return is_array($log) ? array_slice($log, 0, $n) : [];
 }
 
 function membership_sync_token_ok($token) {

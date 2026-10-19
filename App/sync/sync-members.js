@@ -107,6 +107,24 @@ function pruneOldExports() {
   } catch (e) { /* not important */ }
 }
 
+// --if-due: the frequent poll task. Cheap check first; the export only runs when the site says a sync is due (daily time passed, or "Sync now" pressed).
+async function stillRequested() {
+  if (!TOKEN) return false;
+  try {
+    const res = await post({ status: "poll" });
+    return !!(res.status === 200 && res.json && res.json.requested);
+  } catch (e) { return false; } // offline or site down: try again at the next poll
+}
+
+// Two runs (daily + a requested one) must not fight over the Chrome profile.
+const LOCK = path.join(__dirname, "sync-members.lock");
+function takeLock() {
+  try { if (Date.now() - fs.statSync(LOCK).mtimeMs < 30 * 60000) return false; } catch (e) { /* no lock */ }
+  try { fs.writeFileSync(LOCK, String(process.pid)); } catch (e) { /* ignore */ }
+  return true;
+}
+function dropLock() { try { fs.unlinkSync(LOCK); } catch (e) { /* ignore */ } }
+
 async function main() {
   log("Daily member sync starting" + (flag("--dry-run") ? " (dry run)" : ""));
   if (!flag("--dry-run") && !TOKEN) throw new Error("MEMBERSHIP_SYNC_TOKEN is not set on this computer -- run sync/set-token.ps1 (the token comes from the website's Developer menu -> Daily sync).");
@@ -135,7 +153,11 @@ async function main() {
   log(r.changed ? "Site updated: " + r.added + " added, " + r.updated + " updated, " + r.notInFile + " no longer in the export." : "No changes since the last sync.");
 }
 
-main().then(() => process.exit(0)).catch(async (err) => {
+(async () => {
+  if (flag("--if-due") && !(await stillRequested())) process.exit(0);
+  if (!takeLock()) { log("Another sync is already running; skipping."); process.exit(0); }
+  try { await main(); } finally { dropLock(); }
+})().then(() => process.exit(0)).catch(async (err) => {
   log("FAILED: " + err.message);
   await reportFailure(err.message);
   process.exit(1);

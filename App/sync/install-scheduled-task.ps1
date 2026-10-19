@@ -1,19 +1,22 @@
-# Registers (or re-registers) the Windows scheduled task that runs the daily member sync.
+# Registers (or re-registers) the Windows scheduled task behind the member sync.
 # Modeled on the CarShow app's installer. Run once per computer:
 #
 #   powershell -ExecutionPolicy Bypass -File sync\install-scheduled-task.ps1
 #
 # Switches:
-#   -Time "06:30"      time of day to run (default 6:30 AM)
+#   -PollMinutes 5     how often the task asks the website whether a sync is due (default 5). The website decides:
+#                      the daily time is set in Developer -> Daily sync (default 6:30 AM Eastern), and the
+#                      "Sync now" button there runs one at the next check. The check is one tiny request; Chrome
+#                      only starts when a sync actually runs.
 #   -UserId DOMAIN\name  the account the task runs as (default: whoever runs this script). It must own the
 #                      ClubExpress Chrome profile and the MEMBERSHIP_SYNC_TOKEN environment variable.
 #   -Uninstall         remove the task
 #
 # The task runs only while that user is signed in (Interactive): on this computer the "run whether logged on or not"
-# mode was refused for the sibling CarShow task. StartWhenAvailable runs it when the computer wakes if it missed 6:30.
+# mode was refused for the sibling CarShow task. StartWhenAvailable runs it when the computer wakes if it missed a check.
 [CmdletBinding()]
 param(
-  [string]$Time = "06:30",
+  [int]$PollMinutes = 5,
   [string]$UserId = "$env:USERDOMAIN\$env:USERNAME",
   [switch]$Uninstall
 )
@@ -51,11 +54,11 @@ if (-not $profileRoot -or -not (Test-Path (Join-Path $profileRoot "AppData\Local
 
 Write-Host "node   : $NodeExe"
 Write-Host "script : $Script"
-Write-Host "daily  : $Time as $UserId"
+Write-Host "checks : every $PollMinutes minutes as $UserId"
 
 # conhost --headless runs node without flashing a console window on the desktop (Windows 10 1809+/11).
-$action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\conhost.exe" -Argument "--headless `"$NodeExe`" `"$Script`"" -WorkingDirectory $AppDir
-$trigger = New-ScheduledTaskTrigger -Daily -At $Time
+$action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\conhost.exe" -Argument "--headless `"$NodeExe`" `"$Script`" --if-due" -WorkingDirectory $AppDir
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).Date -RepetitionInterval (New-TimeSpan -Minutes $PollMinutes)
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
 $principal = New-ScheduledTaskPrincipal -UserId $UserId -LogonType Interactive -RunLevel Limited
 
@@ -64,7 +67,7 @@ if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
   Write-Host "Replaced the existing '$TaskName' task."
 }
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal `
-  -Description "Daily: exports the ClubExpress Additional Member Data report and imports it into the Membership Manager website." | Out-Null
+  -Description "Every $PollMinutes minutes: runs the ClubExpress member export and import when the website says a sync is due (daily time or Sync now)." | Out-Null
 
 Write-Host ""
 Write-Host "Registered '$TaskName'. Try it now with:"

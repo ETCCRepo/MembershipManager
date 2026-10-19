@@ -1107,6 +1107,7 @@
       state.dev.system = j.system || null;
       if (j.sync) { state.sync = j.sync; state.dev.sync = j.sync; }
       if (j.mail) state.dev.mail = j.mail;
+      if (j.syncLog) state.dev.syncLog = j.syncLog;
       state.dev.error = "";
       state.dev.message = keepMessage ? (j.message || "") : "";
     } else {
@@ -1274,10 +1275,22 @@
     // Daily sync: a token for the scheduled task on the club's computer, plus the last run's result.
     var sy = state.dev.sync || state.sync || {};
     var syBox = el("div", { class: "panel pw-form" }, [el("h3", { text: "Daily sync" }),
-      el("div", { class: "hint", text: "A task on the club's computer exports the ClubExpress Additional Member Data report once a day and sends it here. It signs in with a sync token, not a password; the server keeps only the token's hash." }),
+      el("div", { class: "hint", text: "A task on the club's computer exports the ClubExpress Additional Member Data report once a day, at the time set below, and sends it here. Sync now asks it to run on its next check (about every 5 minutes). It signs in with a sync token, not a password; the server keeps only the token's hash." }),
       el("div", { text: "Token: " + (sy.tokenSet ? "created " + fmtDateTime(sy.tokenCreatedAt) : "none (the daily sync is off)") }),
       el("div", { text: "Last run: " + (sy.lastRunAt ? fmtDateTime(sy.lastRunAt) + " — " + (sy.ok ? "ok" : "FAILED") + (sy.message ? " (" + sy.message + ")" : "") : "never") })]);
     var syMsg = el("div", { class: "hint", role: "status" });
+    // Manual sync: only records a request; the club computer's poll task (every ~5 minutes) picks it up.
+    var pending = !!sy.requestedAt;
+    if (pending) syBox.appendChild(el("div", { class: "hint", role: "status", text: (sy.claimedAt ? "Sync running on the club computer (started " + fmtDateTime(sy.claimedAt) + ")" : "Sync requested " + fmtDateTime(sy.requestedAt) + " — waiting for the club computer to pick it up (it checks about every 5 minutes)") + ". Reopen this page to see the result." }));
+    var now = el("button", { class: "btn primary", type: "button" }, ["Sync now"]);
+    if (!sy.tokenSet || pending) now.disabled = true;
+    now.addEventListener("click", function () {
+      now.disabled = true;
+      devApi("sync_request").then(function (j) {
+        if (j && j.ok) { applyDev(j, true); syMsg.className = "success"; syMsg.textContent = j.message; }
+        else { now.disabled = false; syMsg.className = "errors"; syMsg.textContent = (j && j.error) || "Could not request a sync."; }
+      }).catch(function () { now.disabled = false; syMsg.className = "errors"; syMsg.textContent = "Could not reach the server. Nothing was changed."; });
+    });
     if (state.dev.newToken) {
       var tokInput = el("input", { type: "text", readonly: "readonly", value: state.dev.newToken, "aria-label": "New sync token", style: "width:100%;font-family:monospace" });
       tokInput.addEventListener("focus", function () { tokInput.select(); });
@@ -1298,7 +1311,7 @@
         else { syMsg.className = "errors"; syMsg.textContent = (j && j.error) || "Could not create the token."; }
       }).catch(function () { gen.disabled = false; syMsg.className = "errors"; syMsg.textContent = "Could not reach the server. Nothing was changed."; });
     });
-    var btns = [gen];
+    var btns = [now, gen];
     if (sy.tokenSet) {
       var rev = el("button", { class: "btn", type: "button" }, ["Revoke token (turn the sync off)"]);
       rev.addEventListener("click", function () {
@@ -1312,6 +1325,36 @@
     }
     syBox.appendChild(el("div", { class: "toolbar" }, btns));
     syBox.appendChild(syMsg);
+
+    // Time of day the sync runs (Eastern time); the club computer's poll task starts it once that time has passed.
+    var tInput = el("input", { type: "time", value: sy.syncTime || "06:30", "aria-label": "Daily sync time" });
+    var tSave = el("button", { class: "btn", type: "button" }, ["Save time"]);
+    var tMsg = el("div", { class: "hint", role: "status" });
+    tSave.addEventListener("click", function () {
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(tInput.value)) { tMsg.className = "errors"; tMsg.textContent = "Choose a time of day."; return; }
+      tSave.disabled = true; tMsg.className = "hint"; tMsg.textContent = "Saving…";
+      devApi("save_settings", { syncTime: tInput.value }).then(function (j) {
+        tSave.disabled = false;
+        if (j && j.ok) { applyDev(j, true); tMsg.className = "success"; tMsg.textContent = j.message || "Saved."; }
+        else { tMsg.className = "errors"; tMsg.textContent = (j && j.error) || "Could not save."; }
+      }).catch(function () { tSave.disabled = false; tMsg.className = "errors"; tMsg.textContent = "Could not reach the server. Nothing was changed."; });
+    });
+    syBox.appendChild(el("div", { class: "toolbar" }, [el("strong", { text: "Run the sync each day at" }), tInput, el("span", { class: "hint", text: "Eastern time" }), tSave]));
+    syBox.appendChild(tMsg);
+
+    // Every sync run, newest first.
+    var slog = state.dev.syncLog || [];
+    syBox.appendChild(el("h4", { text: "Sync log" }));
+    if (!slog.length) syBox.appendChild(el("div", { class: "hint", text: "No syncs have run since logging was added." }));
+    else {
+      var how = { manual: "Sync now", scheduled: "Scheduled", direct: "Run on the computer" };
+      syBox.appendChild(el("div", { class: "tablewrap" }, [tkEnhanceTable(el("table", { class: "grid static" }, [
+        el("thead", {}, [el("tr", {}, ["When", "How", "Result", "Details"].map(function (h) { return el("th", { text: h }); }))]),
+        el("tbody", {}, slog.map(function (e) {
+          return el("tr", {}, [fmtDateTime(e.at), how[e.trigger] || e.trigger || "", e.ok ? "OK" : "FAILED", e.message || ""].map(function (c) { return el("td", { text: String(c) }); }));
+        }))
+      ]), "syncLog")]));
+    }
     view.appendChild(makeCollapsible(syBox, "dev:sync"));
 
     view.appendChild(makeCollapsible(el("div", { class: "panel" }, [el("h3", { text: "System check" }), el("div", { id: "devSystem" })]), "dev:system"));

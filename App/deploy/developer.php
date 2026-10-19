@@ -25,6 +25,7 @@ function dev_status() {
     $to = membership_mail_recipient();
     $out['mail'] = ['smtp' => (membership_smtp_config() !== null), 'to' => substr($to, 0, 1) . '***' . substr($to, (int)strrpos($to, '@'))];
     if (!$out['unlocked']) return $out;
+    $out['syncLog'] = membership_sync_log_read(60);
     $members = membership_read_json(membership_members_file(), []);
     $snapDir = membership_data_dir('snapshots');
     $out['system'] = [
@@ -118,6 +119,13 @@ if ($action === 'sync_token_generate') {
     dev_out(200, array_merge(dev_status(), ['token' => $token, 'message' => 'New sync token created. Copy it now — it will not be shown again, and the old token (if any) no longer works.']));
 }
 
+if ($action === 'sync_request') {
+    $pub = membership_sync_public();
+    if (empty($pub['tokenSet'])) dev_out(409, ['ok' => false, 'error' => 'There is no sync token, so the club computer cannot be asked to sync. Create a sync token first.']);
+    if (!membership_sync_request_set()) dev_out(500, ['ok' => false, 'error' => 'Could not record the request.']);
+    dev_out(200, array_merge(dev_status(), ['message' => 'Sync requested. The club computer checks every few minutes and will run it when it next checks.']));
+}
+
 if ($action === 'sync_token_revoke') {
     if (!membership_sync_token_revoke()) dev_out(500, ['ok' => false, 'error' => 'Could not revoke the token.']);
     dev_out(200, array_merge(dev_status(), ['message' => 'Sync token revoked. The daily sync is switched off until a new token is created.']));
@@ -125,6 +133,10 @@ if ($action === 'sync_token_revoke') {
 
 if ($action === 'save_settings') {
     $changes = [];
+    if (isset($body['syncTime'])) {
+        if (!membership_valid_hhmm($body['syncTime'])) dev_out(422, ['ok' => false, 'error' => 'Choose a valid time of day.']);
+        $changes['syncTime'] = $body['syncTime'];
+    }
     foreach (['renewalStart', 'renewalEnd'] as $k) {
         if (!isset($body[$k])) continue;
         if (!membership_valid_mmdd($body[$k])) dev_out(422, ['ok' => false, 'error' => 'Choose a valid month and day for the ' . ($k === 'renewalStart' ? 'renewal start' : 'renewal end') . ' (February 29 is not allowed).']);
@@ -133,7 +145,7 @@ if ($action === 'save_settings') {
     if (!$changes) dev_out(422, ['ok' => false, 'error' => 'Nothing to save.']);
     $saved = membership_settings_update($changes);
     if (!$saved) dev_out(500, ['ok' => false, 'error' => 'Could not save the settings. Nothing was changed.']);
-    dev_out(200, array_merge(dev_status(), ['message' => 'Renewal dates saved. Everyone sees them on their next page load.']));
+    dev_out(200, array_merge(dev_status(), ['message' => isset($changes['syncTime']) ? 'Sync time saved. The club computer runs the sync at that time each day (it checks about every 5 minutes).' : 'Renewal dates saved. Everyone sees them on their next page load.']));
 }
 
 if ($action === 'change_dev_password') {
