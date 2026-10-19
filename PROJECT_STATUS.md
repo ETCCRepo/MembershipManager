@@ -14,7 +14,7 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 381 rows × 40 columns, all `Active` (no lapsed members — it is a current snapshot only). Rows are ragged (317 have 37 cols; Corvette columns only on 64). One row = one **person**; `primary_member_number` = household (237 primary incl. 20 `Role` rows; 217 households excluding roles); `member_level` 1 = primary, 2 = spouse. 6 spouse rows share member numbers; 1 row has no member number. **146 members share join date 12/21/2022** (a data-load date) so join history before 2023 is not usable; only ~4 genuine older join dates. Membership types contain a damaged dash (U+FFFD). `Role` accounts expire 1/1/2066 and have no join date. The file includes `login_name`, `date_of_birth`, `gender` etc., which are dropped at import.
 
-## Decisions made (confirm with the owner)
+## Decisions made (confirmed by the owner 2026-10-19: Role accounts excluded from member counts; 12/21/2022 bulk join date excluded from new-member counts)
 
 - Role accounts (officer positions) are excluded from member counts by default (toggle available).
 - Active = Status "Active". Bulk-load join dates (≥15 and ≥5% of dated members share one date) are excluded from new-member counts/tenure and shown separately.
