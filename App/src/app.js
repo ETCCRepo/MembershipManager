@@ -1178,7 +1178,7 @@
       var pw = passwordField("Developer password", "off");
       var go = el("button", { class: "btn primary", type: "submit" }, ["Unlock"]);
       var form = el("form", { class: "panel pw-form", autocomplete: "off" }, [el("h3", { text: "Developer password required" }),
-        el("div", { class: "hint", text: "This area changes passwords and shows server details. It stays unlocked for 30 idle minutes." }), pw.row, el("div", { class: "toolbar" }, [go])]);
+        el("div", { class: "hint", text: "This area changes passwords and shows server details. It stays unlocked for 30 idle minutes." }), pw.row, el("div", { class: "toolbar" }, [go]), el("div", { class: "hint" }, [el("a", { href: "recover.php?for=dev" }, ["Forgot the developer password?"])])]);
       if (d.error) form.appendChild(el("div", { class: "errors", text: d.error }));
       form.addEventListener("submit", function (e) {
         e.preventDefault();

@@ -287,26 +287,25 @@ Changing the website password signs out every other browser. **The developer pas
 in `data/auth.json`, which overrides the hash in `secrets.php` once set. Five wrong developer passwords from one
 address lock that menu for 15 minutes.
 
-## Password recovery (both passwords lost)
+## Forgot password (website login password and developer password, each on its own)
 
-There is deliberately **no hardcoded master password**: a fixed password in the code would give permanent access to
-member data to anyone who ever saw it, however often the real passwords changed. `recover.php` instead accepts one
-of two out-of-band proofs. Either way it replaces **both** passwords with new random ones, shows them once, and signs
-everyone out; then log in and set your own in the Developer menu.
+The login page has a **Forgot password?** link (website login password) and the Developer unlock form has **Forgot the developer password?** Each opens
+`recover.php?for=site` / `?for=dev` and resets **only that password** with a new random one, shown once on screen (resetting the website password also signs
+everyone else out; resetting the developer password does not). Without `?for=` the page resets both. There is deliberately **no hardcoded master password**: a fixed
+password in the code would give permanent access to member data to anyone who ever saw it, however often the real passwords changed. Instead, `recover.php` accepts
+one of two out-of-band proofs, each one-shot and time-limited:
 
-1. **Emailed link.** Open `https://etccapps.com/apps/membershipmanager/recover.php` and press *Email me a recovery
-   link*. A one-time link (valid 30 minutes; only its SHA-256 hash is stored; a newer request replaces an older link)
-   is sent to `$RECOVERY_EMAIL` from `secrets.php` (default `etccwebsite.webmanager@gmail.com`) — the recipient can
-   never be typed into the page. At most one email per 15 minutes, from anyone. Needs the `$SMTP` block in
-   `secrets.php` (see `secrets.example.php`: host, port 587/`tls` or 465/`ssl`, mailbox login, from address). With
-   `host` empty it falls back to PHP `mail()`, which often works on shared hosting but may land in spam.
-2. **FTP trigger.** Upload an **empty** file named `data/RESET-PASSWORDS` into the app folder by FTP, then open
-   `recover.php` within 15 minutes and press the button. Works even with no email set up or a broken `secrets.php`.
+1. **Emailed link.** Press *Email me a recovery link*: a one-time link (valid 30 minutes; only its SHA-256 hash is stored; it is bound to the password it was requested
+   for; a newer request replaces an older link) is sent to `$RECOVERY_EMAIL` from `secrets.php` (default `etccwebsite.webmanager@gmail.com`) — the recipient can never be
+   typed into the page. At most one email per 15 minutes **per password**, from anyone. Needs the `$SMTP` block in `secrets.php` (see `secrets.example.php`: host, port
+   587/`tls` or 465/`ssl`, mailbox login, from address); with `host` empty it falls back to PHP `mail()`, which often works on shared hosting but may land in spam.
+2. **FTP trigger.** Upload an **empty** file into the app folder by FTP and open `recover.php` within 15 minutes: `data/RESET-SITE-PASSWORD` (website login),
+   `data/RESET-DEV-PASSWORD` (developer) or `data/RESET-PASSWORDS` (both). Works even with no email set up or a broken `secrets.php`.
 
-Each trigger is single-use and is deleted when used. Trade-offs: whoever controls the recovery mailbox or FTP can
-reset access (the same trust the site already places in them), and anyone can make the page send the club one
-recovery email per 15 minutes (it does nothing unless the link is opened). `recover.php` performs no change on a
-plain page view; only the confirm button (a POST) does.
+Each trigger is single-use and is deleted when used. After a reset, log in with the new random password and set your own: Developer → *Change website login password*
+or *Change developer password*. A changed developer password also opens the website. Trade-offs: whoever controls the recovery mailbox or FTP can reset access (the
+same trust the site already places in them), and anyone can make the page send the club one recovery email per 15 minutes per password (it does nothing unless the link is
+opened). A plain page view never changes anything; only the confirm button (a POST) does.
 
 ## Backup and restore
 

@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (night, 18) — a 'forgot password' option for each password
+- Owner request. Login page: **Forgot password?** -> `recover.php?for=site`; Developer unlock form: **Forgot the developer password?** -> `recover.php?for=dev`. `recover.php` now resets only the chosen password (scope site / dev / both): per-scope email cooldown and recorded token scope (`membership_recovery_*` in `lib.php`), per-scope FTP trigger files `data/RESET-SITE-PASSWORD`, `data/RESET-DEV-PASSWORD`, `data/RESET-PASSWORDS`, wording and confirm button per scope; only a site reset signs other browsers out. Emailed links still need the `$SMTP` block in the server's `secrets.php` (not yet configured; the FTP method works without it). Not exercised end to end (pressing the email button emails the club mailbox). Deployed.
+
 ### 2026-10-19 (night, 17) — changing the developer password no longer asks for the current one
 - Owner request. `change_dev_password` in `developer.php` now only requires the Developer menu to be unlocked (as `change_site_password` already did); the form has just New + Confirm. Deployed.
 

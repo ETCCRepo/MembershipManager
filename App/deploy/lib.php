@@ -365,9 +365,18 @@ function membership_dev_touch() {
 
 
 // ---- Emailed password-recovery links (see recover.php, mailer.php). Only a
-// SHA-256 hash of the one-time token is stored, never the token itself.
+// SHA-256 hash of the one-time token is stored, never the token itself. Recovery can target the website
+// login password ('site'), the developer password ('dev') or both ('both').
 const MEMBERSHIP_RECOVERY_TOKEN_TTL = 1800;     // emailed link is valid 30 minutes
-const MEMBERSHIP_RECOVERY_EMAIL_COOLDOWN = 900; // at most one recovery email per 15 minutes, from anyone
+const MEMBERSHIP_RECOVERY_EMAIL_COOLDOWN = 900; // at most one recovery email per 15 minutes per password, from anyone
+
+function membership_recovery_scope($s) {
+    return in_array($s, ['site', 'dev'], true) ? $s : 'both';
+}
+
+function membership_recovery_scope_label($scope) {
+    return ['site' => 'website login password', 'dev' => 'developer password', 'both' => 'website login and developer passwords'][membership_recovery_scope($scope)];
+}
 
 function membership_recovery_token_file() {
     return membership_data_dir() . '/recovery-token.json';
@@ -377,20 +386,25 @@ function membership_recovery_log_file() {
     return membership_data_dir() . '/recovery-email-log.json';
 }
 
-// Seconds until another recovery email may be sent (0 = allowed now).
-function membership_recovery_email_wait() {
+// Seconds until another recovery email for this password may be sent (0 = allowed now).
+function membership_recovery_email_wait($scope = 'both') {
     $log = membership_read_json(membership_recovery_log_file(), []);
-    $last = (int)($log['lastSentAt'] ?? 0);
+    $last = (int)($log['sent'][membership_recovery_scope($scope)] ?? 0);
     return max(0, ($last + MEMBERSHIP_RECOVERY_EMAIL_COOLDOWN) - time());
 }
 
-// Replaces the pending token (so only the newest emailed link works) and
-// starts the send cooldown.
-function membership_recovery_token_store($token) {
+// Replaces the pending token (so only the newest emailed link works), remembers which password it is for,
+// and starts that password's send cooldown.
+function membership_recovery_token_store($token, $scope = 'both') {
     $now = time();
-    return membership_write_json(membership_recovery_token_file(), [
-        'hash' => hash('sha256', $token), 'createdAt' => $now, 'expiresAt' => $now + MEMBERSHIP_RECOVERY_TOKEN_TTL,
-    ]) && membership_write_json(membership_recovery_log_file(), ['lastSentAt' => $now]);
+    $scope = membership_recovery_scope($scope);
+    $ok = membership_write_json(membership_recovery_token_file(), [
+        'hash' => hash('sha256', $token), 'scope' => $scope, 'createdAt' => $now, 'expiresAt' => $now + MEMBERSHIP_RECOVERY_TOKEN_TTL,
+    ]);
+    $log = membership_read_json(membership_recovery_log_file(), []);
+    $sent = is_array($log['sent'] ?? null) ? $log['sent'] : [];
+    $sent[$scope] = $now;
+    return $ok && membership_write_json(membership_recovery_log_file(), ['sent' => $sent]);
 }
 
 function membership_recovery_token_valid($token) {
@@ -399,179 +413,27 @@ function membership_recovery_token_valid($token) {
     return is_string($token) && $token !== '' && hash_equals($rec['hash'], hash('sha256', $token));
 }
 
+// The password an emailed link resets (as recorded when it was created).
+function membership_recovery_token_scope() {
+    $rec = membership_read_json(membership_recovery_token_file(), []);
+    return membership_recovery_scope($rec['scope'] ?? 'both');
+}
+
 // Used up by any confirm attempt, so a link is good for one try.
 function membership_recovery_token_consume() {
     @unlink(membership_recovery_token_file());
 }
 
-// Replaces BOTH passwords with new random ones and signs out every session.
-// Returns ['site' => ..., 'dev' => ...] or false if nothing could be saved.
-function membership_recovery_reset_passwords() {
-    $site = membership_generate_password();
-    $dev = membership_generate_password();
-    $saved = membership_auth_update(['siteHash' => membership_hash_password($site), 'devHash' => membership_hash_password($dev)]);
-    return $saved ? ['site' => $site, 'dev' => $dev] : false;
-}
-
-
-// ---- Club settings edited in the Developer menu (data/settings.json, denied to HTTP).
-// Renewal start/end are month-day strings ("10-01", "12-31"); memberships expire on the end date.
-function membership_settings_file() {
-    return membership_data_dir() . '/settings.json';
-}
-
-function membership_settings_defaults() {
-    return ['renewalStart' => '10-01', 'renewalEnd' => '12-31'];
-}
-
-function membership_valid_mmdd($s) {
-    return is_string($s) && preg_match('/^(\d{2})-(\d{2})$/', $s, $m) === 1 && checkdate((int)$m[1], (int)$m[2], 2001);
-}
-
-function membership_settings_read() {
-    $defaults = membership_settings_defaults();
-    $stored = membership_read_json(membership_settings_file(), []);
-    $out = $defaults;
-    foreach ($defaults as $k => $_) {
-        if (isset($stored[$k]) && membership_valid_mmdd($stored[$k])) $out[$k] = $stored[$k];
-    }
-    return $out;
-}
-
-// Merges validated changes into settings.json under a lock. Returns the new settings or false.
-function membership_settings_update($changes) {
-    $file = membership_settings_file();
-    return membership_with_lock($file, function () use ($file, $changes) {
-        $cur = membership_settings_read();
-        foreach (array_keys(membership_settings_defaults()) as $k) {
-            if (isset($changes[$k])) $cur[$k] = $changes[$k];
-        }
-        $cur['updatedAt'] = gmdate('c');
-        return membership_write_json($file, $cur) ? membership_settings_read() : false;
-    });
-}
-
-
-// ---- Import commit shared by the browser importer (members-import.php) and the daily sync
-// (members-sync.php). Re-validates every record, applies the import, and writes the roster,
-// a dated snapshot (full imports that changed something), rejected rows and the batch log.
-// $opts: minRosterFraction (refuse a FULL import smaller than that share of the current roster —
-// protects against a truncated export), skipIfUnchanged (an identical roster writes nothing).
-// Returns ['status' => HTTP code, 'payload' => array].
-function membership_import_commit($rawMembers, $rawRejected, $mode, $sourceFile, $source, $opts = []) {
-    if (!is_array($rawMembers)) return ['status' => 400, 'payload' => ['ok' => false, 'error' => 'Malformed import.']];
-    if (count($rawMembers) > MEMBERSHIP_MAX_MEMBERS) return ['status' => 413, 'payload' => ['ok' => false, 'error' => 'Too many rows for a membership export.']];
-    $mode = $mode === 'partial' ? 'partial' : 'full';
-    $incoming = [];
-    $rejected = [];
-    $seenKeys = [];
-    foreach ($rawMembers as $i => $m) {
-        $v = membership_validate_member($m);
-        if (is_string($v)) { $rejected[] = ['rowNumber' => $i + 2, 'reason' => $v, 'values' => '']; continue; }
-        if (isset($seenKeys[$v['key']])) { $rejected[] = ['rowNumber' => $i + 2, 'reason' => 'Duplicate record key.', 'values' => '']; continue; }
-        $seenKeys[$v['key']] = true;
-        $incoming[] = $v;
-    }
-    // Rows the sender rejected (kept so they can be downloaded later).
-    foreach ((is_array($rawRejected) ? array_slice($rawRejected, 0, 5000) : []) as $r) {
-        $vals = is_array($r['row'] ?? null) ? implode(' | ', array_map('membership_clean_str', array_slice($r['row'], 0, 60))) : '';
-        $rejected[] = ['rowNumber' => (int)($r['rowNumber'] ?? 0), 'reason' => membership_clean_str($r['reason'] ?? ''), 'values' => $vals];
-    }
-    if (!$incoming) return ['status' => 422, 'payload' => ['ok' => false, 'error' => 'No valid member rows to import.']];
-
-    date_default_timezone_set('America/New_York');
-    $sourceFile = basename(membership_clean_str($sourceFile !== '' ? $sourceFile : 'upload.csv'));
-    $id = date('YmdHis');
-    $guard = (float)($opts['minRosterFraction'] ?? 0);
-    $skipUnchanged = !empty($opts['skipIfUnchanged']);
-
-    $result = membership_with_lock(membership_members_file(), function () use ($incoming, $rejected, $mode, $sourceFile, $source, $id, $guard, $skipUnchanged) {
-        $data = membership_read_json(membership_members_file(), []);
-        $current = isset($data['members']) && is_array($data['members']) ? $data['members'] : [];
-        if ($mode === 'full' && $guard > 0 && count($current) >= 20 && count($incoming) < $guard * count($current)) {
-            return ['refused' => 'The export has ' . count($incoming) . ' members but the site has ' . count($current) . '; that looks incomplete, so nothing was changed.'];
-        }
-        $applied = membership_apply_import($current, $incoming, $mode);
-        $changed = ($applied['added'] + $applied['updated'] + $applied['notInFile']) > 0;
-        if ($skipUnchanged && !$changed) return $applied + ['changed' => false, 'summary' => null];
-        $now = gmdate('c');
-        $saved = membership_write_json(membership_members_file(), [
-            'importedAt' => $now,
-            'sourceFile' => $sourceFile,
-            'members' => $applied['roster'],
-        ]);
-        if (!$saved) return false;
-        $summary = membership_snapshot_summary($applied['roster'], $id, $mode, $sourceFile, $applied, count($rejected));
-        // Only a FULL file is a snapshot of the whole club; a partial file is logged as a batch
-        // but never becomes a point on a history chart.
-        if ($mode === 'full') membership_write_json(membership_data_dir('snapshots') . '/' . $id . '.json', $summary);
-        if ($rejected) membership_write_json(membership_data_dir('batches') . '/' . $id . '-rejected.json', $rejected);
-        membership_append_json_list(membership_import_log_file(), [
-            'id' => $id, 'timestamp' => $now, 'mode' => $mode, 'sourceFile' => $sourceFile, 'source' => $source,
-            'count' => count($incoming), 'added' => $applied['added'], 'updated' => $applied['updated'],
-            'unchanged' => $applied['unchanged'], 'notInFile' => $applied['notInFile'], 'rejected' => count($rejected),
-            'rosterSize' => count($applied['roster']),
-        ]);
-        return $applied + ['changed' => true, 'summary' => $summary];
-    });
-
-    if ($result === false) return ['status' => 500, 'payload' => ['ok' => false, 'error' => 'Could not save the member list — please try again.']];
-    if (isset($result['refused'])) return ['status' => 409, 'payload' => ['ok' => false, 'error' => $result['refused']]];
-    if (is_array($result['summary'] ?? null)) unset($result['summary']['keys']);
-    return ['status' => 200, 'payload' => [
-        'ok' => true, 'batch' => $result['changed'] ? $id : null, 'mode' => $mode, 'changed' => $result['changed'],
-        'added' => $result['added'], 'updated' => $result['updated'], 'unchanged' => $result['unchanged'], 'notInFile' => $result['notInFile'],
-        'rejected' => count($rejected), 'summary' => $result['summary'] ?? null,
-    ]];
-}
-
-// ---- Daily sync: a one-time token (only its SHA-256 hash is stored in data/auth.json), a status
-// file the sync updates after every run, and a throttle shared with the login throttle.
-function membership_sync_status_file() {
-    return membership_data_dir() . '/sync-status.json';
-}
-
-function membership_sync_status_write($ok, $message, $extra = []) {
-    $file = membership_sync_status_file();
-    return membership_with_lock($file, function () use ($file, $ok, $message, $extra) {
-        $cur = membership_read_json($file, []);
-        $now = gmdate('c');
-        $cur['lastRunAt'] = $now;
-        $cur['ok'] = (bool)$ok;
-        $cur['message'] = mb_substr((string)$message, 0, 300);
-        if ($ok) $cur['lastSuccessAt'] = $now;
-        foreach (['changed', 'rows', 'added', 'updated', 'notInFile', 'rejected'] as $k) {
-            if (array_key_exists($k, $extra)) $cur[$k] = $extra[$k];
-        }
-        return membership_write_json($file, $cur);
-    });
-}
-
-// Non-secret summary shown on the dashboard and in the Developer menu.
-function membership_sync_public() {
-    $s = membership_read_json(membership_sync_status_file(), []);
-    $a = membership_auth_read();
-    return [
-        'tokenSet' => !empty($a['syncTokenHash']), 'tokenCreatedAt' => $a['syncTokenCreatedAt'] ?? null,
-        'lastRunAt' => $s['lastRunAt'] ?? null, 'lastSuccessAt' => $s['lastSuccessAt'] ?? null, 'ok' => $s['ok'] ?? null,
-        'message' => $s['message'] ?? '', 'changed' => $s['changed'] ?? null,
-    ];
-}
-
-function membership_sync_token_ok($token) {
-    $a = membership_auth_read();
-    $h = (string)($a['syncTokenHash'] ?? '');
-    return is_string($token) && strlen($token) >= 20 && $h !== '' && hash_equals($h, hash('sha256', $token));
-}
-
-// Creates a new token (replacing any old one) and returns it — the only time it is ever visible.
-function membership_sync_token_new() {
-    $token = 'mmsync_' . bin2hex(random_bytes(24));
-    return membership_auth_update(['syncTokenHash' => hash('sha256', $token), 'syncTokenCreatedAt' => gmdate('c')]) ? $token : false;
-}
-
-function membership_sync_token_revoke() {
-    return membership_auth_update(['syncTokenHash' => '', 'syncTokenCreatedAt' => null]);
+// Replaces the chosen password(s) with new random ones. Resetting the website password signs out every
+// session; resetting only the developer password does not. Returns ['site' => ..., 'dev' => ...] (only the
+// ones reset) or false if nothing could be saved.
+function membership_recovery_reset_passwords($scope = 'both') {
+    $scope = membership_recovery_scope($scope);
+    $new = [];
+    $changes = [];
+    if ($scope === 'site' || $scope === 'both') { $new['site'] = membership_generate_password(); $changes['siteHash'] = membership_hash_password($new['site']); }
+    if ($scope === 'dev' || $scope === 'both') { $new['dev'] = membership_generate_password(); $changes['devHash'] = membership_hash_password($new['dev']); }
+    return membership_auth_update($changes) ? $new : false;
 }
 
 // The developer password also opens the website (the owner's request), but only once it has been changed

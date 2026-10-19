@@ -36,6 +36,9 @@
   #password-btn:hover { background: #0077ed; }
   #password-btn:active { opacity: 0.9; }
   #password-btn:disabled { opacity: 0.6; cursor: default; }
+  #forgot-wrap { text-align: center; margin-top: 14px; }
+  #forgot-link { font-size: 13px; color: #0071e3; text-decoration: none; }
+  #forgot-link:hover { text-decoration: underline; }
   #password-screen-footer {
     color: rgba(255,255,255,0.85); font-size: 12px; text-align: center; margin-top: 20px;
   }
@@ -50,6 +53,7 @@
     <input type="password" id="password-input" placeholder="Enter password" autofocus />
     <div id="password-error">Incorrect password</div>
     <button id="password-btn">Sign In</button>
+    <div id="forgot-wrap"><a id="forgot-link" href="recover.php?for=site">Forgot password?</a></div>
   </div>
   <div id="password-screen-footer">&copy; 2026 East Tennessee Corvette Club &middot; Knoxville, TN &middot; <a href="mailto:etccwebsite.webmanager@gmail.com">etccwebsite.webmanager@gmail.com</a></div>
 </div>
