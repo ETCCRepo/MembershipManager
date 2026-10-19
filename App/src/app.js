@@ -3,8 +3,6 @@
  * load; renderViews() rebuilds #app from `state`.
  *
  *   Dashboard  — headline counts and charts
- *   Reports    — period / filter driven reports, each with a chart, a
- *                supporting table, CSV export and print
  *   Members    — searchable, sortable, filterable directory
  *   Import     — ClubExpress CSV: local preview, mapping, validation, history
  *
@@ -165,7 +163,7 @@
     app.innerHTML = "";
     state.secKeys = [];
     app.appendChild(buildTabs());
-    var view = state.tab === "reports" ? buildReportsView() : state.tab === "members" ? buildMembersView() :
+    var view = state.tab === "members" ? buildMembersView() :
       state.tab === "import" ? buildImportView() : state.tab === "developer" ? buildDeveloperView() : state.tab === "meeting" ? buildMeetingView() : buildDashboardView();
     if (state.secKeys.length >= 5) view.insertBefore(sectionControls(), view.firstChild);
     app.appendChild(view);
@@ -174,7 +172,7 @@
     renderChartPage();
   }
   function buildTabs() {
-    var tabs = [["dashboard", "Dashboard"], ["reports", "Reports"], ["meeting", "Monthly Meeting"], ["members", "Members"], ["import", "Import"]];
+    var tabs = [["dashboard", "Dashboard"], ["meeting", "Monthly Meeting"], ["members", "Members"], ["import", "Import"]];
     var bar = el("div", { class: "tabs no-print", role: "tablist" }, tabs.map(function (t) {
       var d = el("div", { class: "tab" + (state.tab === t[0] ? " active" : ""), text: t[1], role: "tab", tabindex: "0" });
       d.addEventListener("click", function () { selectTab(t[0]); });
@@ -326,10 +324,10 @@
     Object.keys(suspect).forEach(function (d) {
       items.push(num(suspect[d]) + " members share the join date " + L.formatDate(d) + ". That looks like a ClubExpress data-load date rather than a real join day, so these members are left out of new-member counts and tenure.");
     });
-    items.unshift("Cards and charts show members/households (households = single members + couple members ÷ 2); the Show menu switches to just one. The dashboard always covers the whole club; filter by status, type or place on Reports and Members. Times are " + R.TZ + "; today is " + L.formatDate(today()) + ".");
+    items.unshift("Cards and charts show members/households (households = single members + couple members ÷ 2); the Show menu switches to just one. The dashboard always covers the whole club; filter by status, type or place on the Members tab. Times are " + R.TZ + "; today is " + L.formatDate(today()) + ".");
     var roles = state.members.filter(R.isRole).length;
     if (roles && !state.includeRoles) items.push(num(roles) + " role accounts (officer positions) are not counted as members.");
-    items.push("This is a current roster. Members who left before the latest export are not in it, so totals over time come only from dated imports saved here (see Reports → Members over time).");
+    items.push("This is a current roster. Members who left before the latest export are not in it, so totals over time come only from dated imports saved here (see the Total membership over time chart).");
     var box = el("details", { class: "panel notes" }, [el("summary", { text: "About these numbers" })]);
     box.appendChild(el("ul", {}, items.map(function (t) { return el("li", { text: t }); })));
     return box;
@@ -401,7 +399,7 @@
   function buildDashboardView() {
     var view = el("div", { class: "view" });
     if (!state.members.length) { view.appendChild(emptyRosterState()); return view; }
-    // The dashboard is the whole-club overview: it ignores the Reports / Members filters (roles excluded).
+    // The dashboard is the whole-club overview: it ignores the Members filters (roles excluded).
     var t = today(), pool = R.pool(state.members, {}), suspect = R.suspectJoinDates(state.members);
     var active = pool.filter(R.isActive);
     var src = state.importLog.length && state.importLog[0].sourceFile ? " · " + state.importLog[0].sourceFile : "";
@@ -426,7 +424,7 @@
     view.appendChild(grid);
     view.appendChild(caveats(pool));
 
-    // Four charts at most (each opens a full page); more breakdowns live under Reports.
+    // Four charts at most (each opens a full page).
     var p12 = R.period("12m", t, "rolling");
     var vH = state.view === "households", vM = state.view === "members", noun = viewNoun();
     var months = vH ? R.householdsMonthly(pool, p12.start, p12.end, suspect) : chartRows(R.monthlyNew(pool, p12.start, p12.end, suspect));
@@ -454,175 +452,7 @@
     return C.line(series, { ariaLabel: "Active members over time" });
   }
 
-  // ---------- Reports ----------
-  var REPORTS = [
-    ["new", "New members"], ["status", "Status distribution"], ["type", "Membership type"], ["tenure", "Membership tenure"],
-    ["geo", "Geography"], ["renewals", "Renewals & expirations"], ["history", "Members over time (saved imports)"],
-    ["households", "Household membership"], ["service", "Long-serving & anniversaries"], ["quality", "Missing or inconsistent data"]
-  ];
-  var PRESETS = [["1m", "Last month"], ["3m", "Last 3 months"], ["6m", "Last 6 months"], ["12m", "Last year"], ["60m", "Last 5 years"], ["all", "Since 1958"], ["custom", "Custom"]];
-
-  // A report is { explain, sections: [{ title, chart(node)|null, header, rows, onRow, note }] }.
-  function buildReportSpec(pool, p, suspect, t) {
-    var uw = unitWord, spec = { explain: "", sections: [] };
-    function distSection(title, dist, label, extra) {
-      var total = dist.reduce(function (a, d) { return a + d.count; }, 0);
-      return {
-        title: title, dist: dist,
-        header: [label].concat(viewNames("")).concat(["% of total"]),
-        rows: dist.map(function (d) { return [d.label].concat(viewCounts(d.members)).concat([pct(d.count, total)]); }), members: dist.map(function (d) { return d.members; }), note: extra || ""
-      };
-    }
-    if (state.report === "new") {
-      var nm = R.newMembers(pool, p.start, p.end, suspect), pv = p.prevStart ? R.newMembers(pool, p.prevStart, p.prevEnd, suspect) : null;
-      var ya = R.yearAgo(p), yy = p.kind === "all" ? null : R.newMembers(pool, ya.start, ya.end, suspect);
-      spec.explain = "Counts " + uw(2) + " in the current roster whose join date falls between " + L.formatDate(p.start) + " and " + L.formatDate(p.end) + " (" + p.label + ", " + p.kind + "). This is when people joined, not how many were members at the time. " +
-        (nm.excludedBulkDate ? num(nm.excludedBulkDate) + " in this range share a bulk-load date and are excluded. " : "") + (nm.undated ? num(nm.undated) + " have no join date. " : "");
-      var months = chartRows(R.monthlyNew(pool, p.start < "1958-01-01" ? "1958-01-01" : p.start, p.end, suspect));
-      if (p.kind === "all") months = months.filter(function (m) { return m.count; });
-      spec.sections.push({ title: "New " + viewNoun() + " by month", chart: function () { return C.bar(months, { ariaLabel: "New members by month", onSelect: function (d) { openList("New members — " + d.label, d.members); } }); },
-        header: ["Month"].concat(viewNames("New ")).concat(["Cumulative in range"]), rows: months.map(function (m, i) { var cum = months.slice(0, i + 1).reduce(function (a, x) { return a + x.count; }, 0); return [m.label].concat(viewCounts(m.members)).concat([cum]); }), members: months.map(function (m) { return m.members; }) });
-      var years = chartRows(R.yearlyNew(pool, p.start, p.end, suspect));
-      if (p.kind === "all") years = years.filter(function (y) { return y.count; });
-      spec.sections.push({ title: "New " + viewNoun() + " by year", chart: function () { return C.bar(years, { ariaLabel: "New members by year", onSelect: function (d) { openList("New members — " + d.label, d.members); } }); },
-        header: ["Year"].concat(viewNames("New ")), rows: years.map(function (y) { return [y.label].concat(viewCounts(y.members)); }), members: years.map(function (y) { return y.members; }), note: "Years with a partial range count only the part inside the selected dates." });
-      var cmpRows = [["This period (" + p.start + " to " + p.end + ")"].concat(viewCounts(nm.members)).concat(["", ""])];
-      if (pv) { var c1 = R.compare(chartVal(nm.members), chartVal(pv.members)); cmpRows.push(["Previous period (" + p.prevStart + " to " + p.prevEnd + ")"].concat(viewCounts(pv.members)).concat([vdelta(nm.members, pv.members), c1.pct == null ? "n/a (prior was 0)" : (Math.round(c1.pct * 10) / 10) + "%"])); }
-      if (yy) { var c2 = R.compare(chartVal(nm.members), chartVal(yy.members)); cmpRows.push(["Same dates a year earlier (" + ya.start + " to " + ya.end + ")"].concat(viewCounts(yy.members)).concat([vdelta(nm.members, yy.members), c2.pct == null ? "n/a (prior was 0)" : (Math.round(c2.pct * 10) / 10) + "%"])); }
-      spec.sections.push({ title: "Comparison", header: ["Period"].concat(viewNames("New ")).concat(["Change vs this period", "% change"]), rows: cmpRows, members: cmpRows.map(function (r, i) { return i === 0 ? nm.members : i === 1 && pv ? pv.members : yy.members; }),
-        note: "Change = this period minus the comparison period. % change is shown as n/a when the comparison period had none." });
-    } else if (state.report === "status") {
-      spec.explain = "Current roster " + uw(2) + " grouped by the Status column of the latest import.";
-      var d = distV(pool, function (m) { return m.status; });
-      var s = distSection("Status", d, "Status");
-      s.chart = function () { return C.donut(d, { ariaLabel: "Status", centerLabel: viewNoun(), onSelect: function (x) { openList("Status: " + x.label, x.members); } }); };
-      spec.sections.push(s);
-    } else if (state.report === "type") {
-      spec.explain = "Current roster " + uw(2) + " grouped by membership type. A Couple membership is two people but one household.";
-      var d2 = distV(pool, function (m) { return m.membershipType; });
-      var s2 = distSection("Membership type", d2, "Membership type");
-      s2.chart = function () { return C.donut(d2, { ariaLabel: "Membership type", centerLabel: viewNoun(), onSelect: function (x) { openList("Type: " + x.label, x.members); } }); };
-      spec.sections.push(s2);
-    } else if (state.report === "tenure") {
-      spec.explain = "How long current " + uw(2) + " have belonged, from join date to today (" + L.formatDate(t) + "). Members with a bulk-load join date or no join date cannot be measured and are shown separately rather than guessed.";
-      var d3 = distV(pool, function (m) { return R.tenureBucket(m, t, suspect); }, { order: R.TENURE_ORDER });
-      var s3 = distSection("Tenure", d3, "Tenure");
-      s3.chart = function () { return C.bar(d3, { ariaLabel: "Tenure", onSelect: function (x) { openList("Tenure: " + x.label, x.members); } }); };
-      spec.sections.push(s3);
-    } else if (state.report === "geo") {
-      spec.explain = "Where current " + uw(2) + " live, from the address columns of the latest import. Blank means the export had no value.";
-      var dc = distV(pool, function (m) { return m.city; }, { top: 12 });
-      var sc = distSection("By city (top 12)", dc, "City"); sc.chart = function () { return C.bar(dc, { ariaLabel: "By city", onSelect: function (x) { openList("City: " + x.label, x.members); } }); };
-      var ds = distV(pool, function (m) { return m.state; });
-      var ss = distSection("By state", ds, "State"); ss.chart = function () { return C.donut(ds, { ariaLabel: "By state", centerLabel: viewNoun(), onSelect: function (x) { openList("State: " + x.label, x.members); } }); };
-      var dz = distV(pool, function (m) { return R.zip5(m); }, { top: 12 });
-      var sz = distSection("By ZIP code (top 12)", dz, "ZIP"); sz.chart = function () { return C.bar(dz, { ariaLabel: "By ZIP", onSelect: function (x) { openList("ZIP: " + x.label, x.members); } }); };
-      spec.sections.push(sc, ss, sz);
-    } else if (state.report === "renewals") {
-      var r = R.renewals(pool, t);
-      var rs2 = R.renewalStatus(pool, t, renewalCfg()), tg2 = L.formatDate(rs2.target);
-      spec.explain = "Renewed = expiration date on or after the renewal target (" + tg2 + "), Left to renew = still current but expiring before it, Expired = expiration date already passed; the target is the year-end renewals are working toward (renewal window " + L.formatDate(rs2.window.start) + " to " + L.formatDate(rs2.window.end) + ", set in the Developer menu). Uses the expiration date column. Due = expires between today and the stated number of days; Expired = status Active but the date has passed (so it needs attention). Expirations more than five years out (role/lifetime accounts) are shown as no expiry. ClubExpress memberships here usually expire together on one date, so expect one large month.";
-      spec.sections.push({ title: "Expirations by month", chart: function () { return C.bar(chartRows(r.byExpirationMonth), { ariaLabel: "Expirations by month", onSelect: function (x) { openList("Expiring " + x.label, x.members); } }); },
-        header: ["Month"].concat(viewNames("")), rows: r.byExpirationMonth.map(function (m) { return [m.label].concat(viewCounts(m.members)); }), members: r.byExpirationMonth.map(function (m) { return m.members; }) });
-      var sum = [["Renewed (expire " + tg2 + " or later)", rs2.renewed], ["Left to renew (expire before " + tg2 + ")", rs2.left], ["Expired (date before today)", rs2.expired], ["Active but past expiration", r.expiredStillActive], ["Due within 30 days", r.due30], ["Due within 60 days", r.due60], ["Due within 90 days", r.due90], ["No expiry (far-future date)", r.noExpiry]];
-      spec.sections.push({ title: "Renewal status", header: ["Group"].concat(viewNames("")), rows: sum.map(function (x) { return [x[0]].concat(viewCounts(x[1])); }), members: sum.map(function (x) { return x[1]; }) });
-    } else if (state.report === "history") {
-      var series = R.snapshotSeries(state.snapshots);
-      spec.explain = "A current roster cannot show how many people belonged in the past, so this report uses only the dated FULL imports saved by this site. Each point is the number of active " + uw(2) + " in that import. Partial imports are never used. Gaps between points mean no full import was done in between — nothing is estimated.";
-      var pts = series.map(function (s) { return { label: s.date, count: state.view === "households" ? s.households : s.count, members: [] }; });
-      spec.sections.push({ title: "Active " + uw(2) + " at each saved import", chart: function () { return snapshotChart(); }, header: ["Import date"].concat(viewNames("Active ")), rows: series.map(function (sn) { return [sn.date].concat(viewKinds().map(function (k) { return k === "households" ? sn.households : sn.count; })); }), members: pts.map(function () { return []; }) });
-      var ch = R.snapshotChanges(state.snapshots);
-      spec.sections.push({ title: "Movement between imports (people)", header: ["From", "To", "Kept", "Retention", "New", "Not in newer file", "Returned"],
-        rows: ch.map(function (c) { return [c.from, c.to, c.retained, c.retentionPct == null ? "—" : Math.round(c.retentionPct * 10) / 10 + "%", c.joined.length, c.lost.length, c.reactivated.length]; }), members: ch.map(function () { return []; }),
-        note: ch.length ? "“Not in newer file” means absent from the later full export — it may be a lapse, a resignation or a data issue; this site does not decide which." : "Needs at least two full imports. Import a fresh full export next time and this fills in." });
-    } else if (state.report === "households") {
-      var hp = peoplePoolFiltered(), hb = R.householdBreakdown(hp), hf = R.period("12m", t, "rolling");
-      spec.explain = "A household is counted as: single members + (couple members ÷ 2). Every non-couple membership type counts as one household; a Couple membership is two people and counts as one. " +
-        "This report counts households; cards elsewhere show members/households. A couple with only one record in the export shows as half a household.";
-      var ht = R.householdsByType(hp);
-      spec.sections.push({ title: "Households by membership type", chart: function () { return C.bar(ht, { ariaLabel: "Households by membership type", onSelect: function (x) { openList("Households: " + x.label, x.members); } }); },
-        header: ["Membership type", "People", "Households"], rows: ht.map(function (x) { return [x.label, x.people, x.count]; }).concat([["Total", hp.length, hb.total]]), members: ht.map(function (x) { return x.members; }).concat([hp]),
-        note: "Households = people for single types, people ÷ 2 for couple types." });
-      var comp = [{ label: "Single households", count: hb.singleHouseholds, members: hb.singles }, { label: "Couple households", count: hb.coupleHouseholds, members: hb.couples }];
-      spec.sections.push({ title: "Household composition", chart: function () { return C.donut(comp, { ariaLabel: "Household composition", centerLabel: "households", onSelect: function (x) { openList(x.label, x.members); } }); },
-        header: ["Kind", "Households", "People", "% of households"], rows: comp.map(function (x) { return [x.label, x.count, x.members.length, pct(x.count, hb.total)]; }).concat([["Total", hb.total, hp.length, "100%"]]), members: comp.map(function (x) { return x.members; }).concat([hp]) });
-      var hm = R.householdsMonthly(hp, hf.start, hf.end, suspect);
-      spec.sections.push({ title: "New households by month (last 12 months)", chart: function () { return C.bar(hm, { ariaLabel: "New households by month", onSelect: function (x) { openList("New members — " + x.label, x.members); } }); },
-        header: ["Month", "New households", "New people"], rows: hm.map(function (x) { return [x.label, x.count, x.people]; }), members: hm.map(function (x) { return x.members; }),
-        note: "Counts when each person joined, with each couple member as half a household, so a month can show .5 when partners' join dates fall in different months. Bulk-load join dates are excluded." });
-      var hs = R.snapshotSeries(state.snapshots).map(function (x) { return { label: x.date, count: x.households, members: [] }; });
-      spec.sections.push({ title: "Households over time (saved full imports)", chart: function () { return hs.length > 1 ? C.line(hs, { ariaLabel: "Households over time" }) : el("div", { class: "chart-empty", text: hs.length ? "Only one full import is saved so far; a trend line appears after the next one." : "No full import has been saved yet." }); },
-        header: ["Import date", "Households"], rows: hs.map(function (x) { return [x.label, x.count]; }), members: hs.map(function () { return []; }) });
-      var hz = R.householdSizes(hp);
-      spec.sections.push({ title: "Check: households grouped by primary member number", chart: null, header: ["Household size", "Households", "People"], rows: hz.map(function (x) { return [x.label, x.count, x.members.length]; }), members: hz.map(function (x) { return x.members; }),
-        note: "A second way to count households. It should equal the total above; if it doesn't, a couple has a missing or extra record." });
-    } else if (state.report === "service") {
-      var ls = R.longServing(pool, t, 10, suspect);
-      var an = R.upcomingAnniversaries(pool, t, 60, suspect);
-      spec.explain = "Long-serving = ten or more years since a trustworthy join date. Anniversaries = membership anniversaries in the next 60 days. Bulk-load and missing join dates are skipped because they would give wrong years.";
-      spec.sections.push({ title: "Members of 10+ years", header: ["Name", "Joined", "Years"], rows: ls.map(function (m) { return [memberLine(m), L.formatDate(m.joinDate), R.yearsBetween(m.joinDate, t)]; }), members: ls.map(function (m) { return [m]; }) });
-      spec.sections.push({ title: "Anniversaries in the next 60 days", header: ["Name", "Date", "Years"], rows: an.map(function (a) { return [memberLine(a.member), L.formatDate(a.date), a.years]; }), members: an.map(function (a) { return [a.member]; }) });
-    } else if (state.report === "quality") {
-      var dq = R.dataQuality(pool, t);
-      spec.explain = "Things in the import that are missing, inconsistent or ambiguous. Nothing here is changed or deleted; fix them in ClubExpress and re-import.";
-      spec.sections.push({ title: "Data checks", header: ["Check", uw(2), "What it means"], rows: dq.map(function (q) { return [q.label, q.count, q.help]; }), members: dq.map(function (q) { return q.members; }) });
-    }
-    return spec;
-  }
-
-  function buildReportsView() {
-    var view = el("div", { class: "view reports-view" });
-    if (!state.members.length) { view.appendChild(emptyRosterState()); return view; }
-    var t = today(), pool = filteredPool(), suspect = R.suspectJoinDates(state.members), p = currentPeriod();
-
-    var repSel = select("Report", REPORTS, state.report, function (v) { state.report = v; state.open = {}; renderViews(); });
-    view.appendChild(el("div", { class: "toolbar no-print" }, [repSel]));
-    var needsPeriod = state.report === "new";
-    if (needsPeriod) {
-      var presets = el("div", { class: "preset-row no-print" });
-      PRESETS.forEach(function (x) {
-        var b = el("button", { class: "btn" + (state.preset === x[0] ? " primary" : "") }, [x[1]]);
-        b.addEventListener("click", function () { state.preset = x[0]; renderViews(); });
-        presets.appendChild(b);
-      });
-      view.appendChild(presets);
-      var pc = el("div", { class: "toolbar no-print" });
-      if (state.preset !== "all" && state.preset !== "custom") {
-        pc.appendChild(select("Periods", [["rolling", "Rolling (ends today)"], ["calendar", "Completed calendar months"]], state.periodMode, function (v) { state.periodMode = v; renderViews(); }));
-      }
-      if (state.preset === "custom") {
-        var a = el("input", { type: "date", value: state.custom.start || "", "aria-label": "Start date" }), b2 = el("input", { type: "date", value: state.custom.end || "", "aria-label": "End date" });
-        a.addEventListener("change", function () { state.custom.start = a.value; renderViews(); });
-        b2.addEventListener("change", function () { state.custom.end = b2.value; renderViews(); });
-        pc.appendChild(el("label", { class: "ctl" }, ["From ", a])); pc.appendChild(el("label", { class: "ctl" }, ["To ", b2]));
-      }
-      view.appendChild(pc);
-    }
-    view.appendChild(filterBar(true));
-
-    var spec = buildReportSpec(pool, p, suspect, t);
-    var title = (REPORTS.filter(function (r) { return r[0] === state.report; })[0] || [0, ""])[1];
-    var area = el("div", { class: "report-area" });
-    area.appendChild(el("div", { class: "report-head" }, [el("h2", { text: title }),
-      el("div", { class: "count", text: (needsPeriod ? p.label + " · " + p.start + " to " + p.end + " · " : "") + "counts are " + (state.report === "households" ? "households" : viewWord()) + " · " + R.TZ + " · as of " + L.formatDate(t) })]));
-    area.appendChild(el("div", { class: "panel explain" }, [el("strong", { text: "What this shows. " }), spec.explain]));
-    spec.sections.forEach(function (s, i) { area.appendChild(renderSection(s, "report:" + state.report + "#" + i)); });
-    view.appendChild(area);
-
-    var actions = el("div", { class: "toolbar no-print" });
-    var exp = el("button", { class: "btn" }, ["⬇ Export report CSV"]);
-    exp.addEventListener("click", function () {
-      var out = [[title], [(needsPeriod ? p.label + " (" + p.start + " to " + p.end + ")" : "") + " counts are " + (state.report === "households" ? "households" : viewWord())]];
-      spec.sections.forEach(function (s) { out.push([]); out.push([s.title]); out.push(s.header); s.rows.forEach(function (r) { out.push(r); }); });
-      download("report-" + state.report + ".csv", out.map(function (r) { return r.map(I.csvCell).join(","); }).join("\r\n") + "\r\n");
-    });
-    var pr = el("button", { class: "btn" }, ["🖨 Print"]);
-    pr.addEventListener("click", function () { window.print(); });
-    actions.appendChild(exp); actions.appendChild(pr);
-    view.appendChild(actions);
-    return view;
-  }
-
+  // ---------- Sections (tables with a supporting chart/table, used by Monthly Meeting) ----------
   function renderSection(s, key) {
     var panel = el("div", { class: "panel chart-panel" }, [el("h3", { text: s.title })]);
     if (s.chart) panel.appendChild(s.chart());
@@ -1051,7 +881,7 @@
     var review = b.members.filter(function (m) { return (m.flags || []).length; });
     if (review.length) {
       var items = review.slice(0, 12).map(function (m) { return el("li", { text: memberLine(m) + " — " + m.flags.map(flagText).join(", ") }); });
-      box.appendChild(el("details", { class: "support" }, [el("summary", { text: num(review.length) + " records flagged for review (still imported)" }), el("ul", {}, items.concat(review.length > 12 ? [el("li", { text: "…and " + (review.length - 12) + " more (see Reports → Missing or inconsistent data after importing)" })] : []))]));
+      box.appendChild(el("details", { class: "support" }, [el("summary", { text: num(review.length) + " records flagged for review (still imported)" }), el("ul", {}, items.concat(review.length > 12 ? [el("li", { text: "…and " + (review.length - 12) + " more (each member's details list their data notes after importing)" })] : []))]));
     }
     if (b.rejected.length) {
       var rl = b.rejected.slice(0, 15).map(function (r) { return el("li", { text: "Row " + r.rowNumber + ": " + r.reason }); });
@@ -1406,7 +1236,7 @@
 
   function init() {
     var h = (location.hash || "").replace("#", "");
-    if (["dashboard", "reports", "meeting", "members", "import"].indexOf(h) !== -1) state.tab = h;
+    if (["dashboard", "meeting", "members", "import"].indexOf(h) !== -1) state.tab = h;
     buildHeaderMenu();
     renderViews();
   }

@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (late night, 12) — Reports tab removed
+- Owner: remove the Reports tab. Tabs are now Dashboard, Monthly Meeting, Members, Import. Removed `buildReportsView`, `buildReportSpec` and the report picker/period code from `app.js` (bundle 211 KB -> 191 KB); `renderSection` stays (Monthly Meeting uses it) and `reports.js` is unchanged. An old `#reports` link opens the Dashboard. No longer reachable in the UI: status / type / tenure / geography / renewals / history / households / long-serving & anniversaries / data-quality reports (restore from git at `dcceb7c` or earlier if wanted; the households and totals charts remain on the dashboard). Wording that pointed to Reports was updated. Deployed.
+
 ### 2026-10-19 (late night, 11) — New this month so far card
 - Owner: add a card for new members/households so far this month after 'New last month'. Both cards now use the **meeting month** (the same Wednesday-after-first-Tuesday definition as the Monthly Meeting tab) via `R.meetingPeriods`; previously the dashboard's 'last month' was a rolling 30 days and disagreed with the meeting tab (1/1 vs 14/8 on the real data). 'New last month' = last completed meeting month; 'New this month so far' = the in-progress meeting month through today (on a meeting day it shows 'month begins ...'). Deployed.
 
