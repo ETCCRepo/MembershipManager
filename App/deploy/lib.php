@@ -364,76 +364,155 @@ function membership_dev_touch() {
 }
 
 
-// ---- Emailed password-recovery links (see recover.php, mailer.php). Only a
-// SHA-256 hash of the one-time token is stored, never the token itself. Recovery can target the website
-// login password ('site'), the developer password ('dev') or both ('both').
-const MEMBERSHIP_RECOVERY_TOKEN_TTL = 1800;     // emailed link is valid 30 minutes
-const MEMBERSHIP_RECOVERY_EMAIL_COOLDOWN = 900; // at most one recovery email per 15 minutes per password, from anyone
+// ---- "Forgot password" — the same mechanism as the CarShow app. A public page emails a one-time link to the club's
+// admin address (never an address typed into the page); the link opens a page where the NEW password is chosen.
+// Two independent resets: the website login password ('site': forgot-password.php / reset-password.php) and the
+// developer password ('dev': dev-forgot-password.php / dev-reset-password.php, the first only reachable when logged
+// in). Only a SHA-256 hash of each token is stored (data/password-reset.json, data/dev-password-reset.json), and the
+// new password's hash goes to data/auth.json like a change made in the Developer menu.
+const MEMBERSHIP_RESET_TTL = 86400;       // links are valid 24 hours
+const MEMBERSHIP_RESET_RESEND_WAIT = 300; // one email per 5 minutes per password, so the public page cannot flood the admin inbox
 
-function membership_recovery_scope($s) {
-    return in_array($s, ['site', 'dev'], true) ? $s : 'both';
+function membership_reset_file($kind) {
+    return membership_data_dir() . '/' . ($kind === 'dev' ? 'dev-password-reset.json' : 'password-reset.json');
 }
 
-function membership_recovery_scope_label($scope) {
-    return ['site' => 'website login password', 'dev' => 'developer password', 'both' => 'website login and developer passwords'][membership_recovery_scope($scope)];
+// Seconds until another reset email for this password may be sent (0 = allowed now).
+function membership_reset_wait($kind) {
+    $r = membership_read_json(membership_reset_file($kind), []);
+    return max(0, (int)($r['sentAt'] ?? 0) + MEMBERSHIP_RESET_RESEND_WAIT - time());
 }
 
-function membership_recovery_token_file() {
-    return membership_data_dir() . '/recovery-token.json';
-}
-
-function membership_recovery_log_file() {
-    return membership_data_dir() . '/recovery-email-log.json';
-}
-
-// Seconds until another recovery email for this password may be sent (0 = allowed now).
-function membership_recovery_email_wait($scope = 'both') {
-    $log = membership_read_json(membership_recovery_log_file(), []);
-    $last = (int)($log['sent'][membership_recovery_scope($scope)] ?? 0);
-    return max(0, ($last + MEMBERSHIP_RECOVERY_EMAIL_COOLDOWN) - time());
-}
-
-// Replaces the pending token (so only the newest emailed link works), remembers which password it is for,
-// and starts that password's send cooldown.
-function membership_recovery_token_store($token, $scope = 'both') {
+// Creates a new token (replacing any pending one) and returns it, or false if it could not be saved.
+function membership_reset_start($kind) {
+    $token = bin2hex(random_bytes(32));
     $now = time();
-    $scope = membership_recovery_scope($scope);
-    $ok = membership_write_json(membership_recovery_token_file(), [
-        'hash' => hash('sha256', $token), 'scope' => $scope, 'createdAt' => $now, 'expiresAt' => $now + MEMBERSHIP_RECOVERY_TOKEN_TTL,
-    ]);
-    $log = membership_read_json(membership_recovery_log_file(), []);
-    $sent = is_array($log['sent'] ?? null) ? $log['sent'] : [];
-    $sent[$scope] = $now;
-    return $ok && membership_write_json(membership_recovery_log_file(), ['sent' => $sent]);
+    $ok = membership_write_json(membership_reset_file($kind), ['hash' => hash('sha256', $token), 'expiresAt' => $now + MEMBERSHIP_RESET_TTL, 'sentAt' => $now]);
+    return $ok ? $token : false;
 }
 
-function membership_recovery_token_valid($token) {
-    $rec = membership_read_json(membership_recovery_token_file(), []);
-    if (empty($rec['hash']) || empty($rec['expiresAt']) || time() > (int)$rec['expiresAt']) return false;
-    return is_string($token) && $token !== '' && hash_equals($rec['hash'], hash('sha256', $token));
+function membership_reset_valid($kind, $token) {
+    $r = membership_read_json(membership_reset_file($kind), []);
+    if (empty($r['hash']) || empty($r['expiresAt']) || time() >= (int)$r['expiresAt']) return false;
+    return is_string($token) && $token !== '' && hash_equals($r['hash'], hash('sha256', $token));
 }
 
-// The password an emailed link resets (as recorded when it was created).
-function membership_recovery_token_scope() {
-    $rec = membership_read_json(membership_recovery_token_file(), []);
-    return membership_recovery_scope($rec['scope'] ?? 'both');
+function membership_reset_consume($kind) {
+    @unlink(membership_reset_file($kind));
 }
 
-// Used up by any confirm attempt, so a link is good for one try.
-function membership_recovery_token_consume() {
-    @unlink(membership_recovery_token_file());
+function membership_reset_base_url($script) {
+    $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+    return ($https ? 'https://' : 'http://') . preg_replace('/[^a-z0-9.:\-]/i', '', $_SERVER['HTTP_HOST'] ?? 'localhost') .
+        rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/\\') . '/' . $script;
 }
 
-// Replaces the chosen password(s) with new random ones. Resetting the website password signs out every
-// session; resetting only the developer password does not. Returns ['site' => ..., 'dev' => ...] (only the
-// ones reset) or false if nothing could be saved.
-function membership_recovery_reset_passwords($scope = 'both') {
-    $scope = membership_recovery_scope($scope);
-    $new = [];
-    $changes = [];
-    if ($scope === 'site' || $scope === 'both') { $new['site'] = membership_generate_password(); $changes['siteHash'] = membership_hash_password($new['site']); }
-    if ($scope === 'dev' || $scope === 'both') { $new['dev'] = membership_generate_password(); $changes['devHash'] = membership_hash_password($new['dev']); }
-    return membership_auth_update($changes) ? $new : false;
+// The small standalone page shared by the four forgot/reset pages (same look as the CarShow app's).
+function membership_reset_page($heading, $sub, $bodyHtml) {
+    header('Content-Type: text/html; charset=utf-8');
+    $h = function ($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); };
+    echo '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' .
+        '<title>ETCC Membership — ' . $h($heading) . '</title><link rel="icon" type="image/png" href="ETCClogoWhiteBackground.png">' .
+        '<style>:root{--red:#b0141e;--red-dark:#7d0e15;--ink:#1a1a1a;--muted:#667085;--line:#e3e6ea;--bg:#f4f6f8;--panel:#fff;--good:#147d3a}' .
+        '*{box-sizing:border-box}body{font:15px/1.5 "Segoe UI",Arial,sans-serif;color:var(--ink);background:var(--bg);margin:0;padding:40px 16px}' .
+        '.wrap{max-width:440px;margin:0 auto}h1{font-size:20px;text-align:center;margin:0 0 2px}.sub{text-align:center;color:var(--muted);font-size:13px;margin-bottom:22px}' .
+        '.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px}.form-row{margin:12px 0}label{display:block;font-weight:600;font-size:13px;margin-bottom:4px}' .
+        'input[type=password]{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:7px;font-size:14px;font-family:inherit}' .
+        '.btn{background:var(--red);border:1px solid var(--red-dark);color:#fff;padding:11px 18px;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;width:100%}.btn:hover{background:var(--red-dark)}' .
+        '.errors{background:#fff5f5;border-left:4px solid var(--red);border-radius:6px;padding:10px 14px;margin-bottom:14px;color:var(--red-dark);font-size:13px}' .
+        '.success{color:var(--good);font-weight:600;text-align:center}.back{display:block;text-align:center;margin-top:18px;color:var(--muted);font-size:13px}</style></head><body>' .
+        '<div class="wrap"><h1>' . $h($heading) . '</h1><div class="sub">' . $h($sub) . '</div><div class="panel">' . $bodyHtml . '</div>' .
+        '<a class="back" href="index.php">&larr; Back to login</a></div></body></html>';
+    exit;
+}
+
+// forgot-password.php / dev-forgot-password.php: email the admin address a reset link.
+function membership_forgot_handle($kind) {
+    require_once __DIR__ . '/mailer.php';
+    $isDev = ($kind === 'dev');
+    $heading = $isDev ? 'Forgot Developer Password' : 'Forgot Password';
+    $h = function ($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); };
+    if ($isDev) {
+        // Gated behind the website's own login (like the CarShow app): reaching the Developer unlock form already
+        // requires being logged in, so there is no "locked out of everything" case to rescue here.
+        membership_session_start();
+        if (!membership_is_authenticated()) {
+            membership_reset_page($heading, 'East Tennessee Corvette Club — Membership Manager', '<p>Please <a href="index.php">log in</a> first.</p>');
+        }
+    }
+    $sent = false;
+    $errors = [];
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $wait = membership_reset_wait($kind);
+        if ($wait > 0) {
+            $errors[] = 'A reset link was already emailed a moment ago. Check the admin inbox (and its spam folder), or try again in ' . (int)ceil($wait / 60) . ' minute(s).';
+        } else {
+            $token = membership_reset_start($kind);
+            if ($token === false) {
+                $errors[] = 'Could not start a password reset right now — please try again in a moment.';
+            } else {
+                $url = membership_reset_base_url($isDev ? 'dev-reset-password.php' : 'reset-password.php') . '?token=' . $token;
+                $what = $isDev ? "Developer password" : "website login password";
+                $body = "A reset of the Membership Manager's $what was requested.\n\n" .
+                    "Reset it here (link expires in 24 hours):\n" . $url . "\n\n" .
+                    "If you didn't request this, you can ignore this email — the link expires on its own and nothing changes until someone opens it.";
+                if (membership_send_mail(membership_mail_recipient(), 'ETCC Membership Manager — ' . $what . ' reset requested', $body) === true) {
+                    $sent = true;
+                } else {
+                    membership_reset_consume($kind); // nothing was delivered, so no live link should remain
+                    $errors[] = 'Could not send the reset email — email may not be set up (see secrets.php) or the send failed. Ask a developer to reset the password directly (see deploy/README.md).';
+                }
+            }
+        }
+    }
+    if ($sent) {
+        $html = '<p class="success">A reset link has been emailed. Check the club\'s admin inbox — it\'s valid for 24 hours.</p>';
+    } else {
+        $html = '';
+        if ($errors) $html .= '<div class="errors">' . implode('', array_map(function ($e) use ($h) { return '<p style="margin:0">' . $h($e) . '</p>'; }, $errors)) . '</div>';
+        $html .= '<p style="text-align:center">This site has one shared ' . ($isDev ? 'developer password' : 'login') . ', so resets go to the club\'s admin email rather than one you\'d type here.</p>' .
+            '<form method="post" style="text-align:center"><button type="submit" class="btn">Email a reset link</button></form>';
+    }
+    membership_reset_page($heading, 'East Tennessee Corvette Club — Membership Manager', $html);
+}
+
+// reset-password.php / dev-reset-password.php: the page the emailed link opens, where the new password is chosen.
+function membership_reset_handle($kind) {
+    $isDev = ($kind === 'dev');
+    $heading = $isDev ? 'Reset Developer Password' : 'Reset Password';
+    $h = function ($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); };
+    $token = (string)($_GET['token'] ?? $_POST['token'] ?? '');
+    $valid = membership_reset_valid($kind, $token);
+    $errors = [];
+    $done = false;
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && $valid) {
+        $pw1 = (string)($_POST['password'] ?? '');
+        $pw2 = (string)($_POST['password2'] ?? '');
+        $problem = membership_password_problem($pw1);
+        if ($problem !== '') {
+            $errors[] = $problem;
+        } elseif ($pw1 !== $pw2) {
+            $errors[] = 'Passwords do not match.';
+        } elseif (membership_auth_update([$isDev ? 'devHash' : 'siteHash' => membership_hash_password($pw1)])) {
+            membership_reset_consume($kind); // one-time use
+            $done = true;
+        } else {
+            $errors[] = 'Could not save the new password — please try again.';
+        }
+    }
+    if ($done) {
+        $html = '<p class="success">' . ($isDev ? 'Developer password changed. Use it to unlock the Developer menu (it also works to log in to the website).' : 'Password changed. You can log in with it now.') . '</p>';
+    } elseif (!$valid) {
+        $html = '<div class="errors"><p style="margin:0">This reset link is invalid or has expired. Request a new one.</p></div>';
+    } else {
+        $html = '';
+        if ($errors) $html .= '<div class="errors">' . implode('', array_map(function ($e) use ($h) { return '<p style="margin:0">' . $h($e) . '</p>'; }, $errors)) . '</div>';
+        $html .= '<form method="post"><input type="hidden" name="token" value="' . $h($token) . '">' .
+            '<div class="form-row"><label for="f-pw1">New Password</label><input type="password" id="f-pw1" name="password" required minlength="' . MEMBERSHIP_PASSWORD_MIN . '" autofocus></div>' .
+            '<div class="form-row"><label for="f-pw2">Confirm New Password</label><input type="password" id="f-pw2" name="password2" required minlength="' . MEMBERSHIP_PASSWORD_MIN . '"></div>' .
+            '<button type="submit" class="btn">Set New Password</button></form>';
+    }
+    membership_reset_page($heading, 'East Tennessee Corvette Club — Membership Manager', $html);
 }
 
 // The developer password also opens the website (the owner's request), but only once it has been changed

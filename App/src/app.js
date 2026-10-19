@@ -1179,7 +1179,7 @@
       var pw = passwordField("Developer password", "off");
       var go = el("button", { class: "btn primary", type: "submit" }, ["Unlock"]);
       var form = el("form", { class: "panel pw-form", autocomplete: "off" }, [el("h3", { text: "Developer password required" }),
-        el("div", { class: "hint", text: "This area changes passwords and shows server details. It stays unlocked for 30 idle minutes." }), pw.row, el("div", { class: "toolbar" }, [go]), el("div", { class: "hint" }, [el("a", { href: "recover.php?for=dev" }, ["Forgot the developer password?"])])]);
+        el("div", { class: "hint", text: "This area changes passwords and shows server details. It stays unlocked for 30 idle minutes." }), pw.row, el("div", { class: "toolbar" }, [go]), el("div", { class: "hint" }, [el("a", { href: "dev-forgot-password.php" }, ["Forgot the developer password?"])])]);
       if (d.error) form.appendChild(el("div", { class: "errors", text: d.error }));
       form.addEventListener("submit", function (e) {
         e.preventDefault();
@@ -1254,9 +1254,9 @@
     // Recovery email: how "Forgot password" links are delivered, with a safe way to test it.
     var mail = state.dev.mail || {};
     var mailBox = el("div", { class: "panel pw-form" }, [el("h3", { text: "Recovery email" }),
-      el("div", { class: "hint", text: "The \"Forgot password\" pages email a one-time link to the club's recovery mailbox. The mailbox and the mail-server login are set in secrets.php on the server (never typed into a web page)." }),
+      el("div", { class: "hint", text: "The Forgot password pages (on the login page and the Developer unlock form) email a link, valid 24 hours, to the club's admin address; the new password is chosen on the page it opens. The mail-server login ($SMTP_* — the same mailbox settings as the Car Show app) lives in secrets.php on the server and is never typed into a web page." }),
       el("div", { text: "Recovery mailbox: " + (mail.to || "—") }),
-      el("div", { text: "Mail server (SMTP): " + (mail.smtp ? "configured" : "not set up — emailed links cannot be sent yet (the FTP method still works)") })]);
+      el("div", { text: "Mail server (SMTP): " + (mail.smtp ? "configured" : "not set up — reset links cannot be sent yet") })]);
     var mailMsg = el("div", { class: "hint", role: "status" });
     var testBtn = el("button", { class: "btn primary", type: "button" }, ["Send test email"]);
     testBtn.addEventListener("click", function () {

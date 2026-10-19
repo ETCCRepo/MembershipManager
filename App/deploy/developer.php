@@ -18,13 +18,12 @@ function dev_out($status, $payload) {
 }
 
 function dev_status() {
-    global $SMTP;
     $auth = membership_auth_read();
     $out = ['ok' => true, 'unlocked' => membership_dev_unlocked()];
     $out['settings'] = membership_settings_read();
     $out['sync'] = membership_sync_public();
     $to = membership_mail_recipient();
-    $out['mail'] = ['smtp' => (is_array($SMTP ?? null) && !empty($SMTP['host'])), 'to' => substr($to, 0, 1) . '***' . substr($to, (int)strrpos($to, '@'))];
+    $out['mail'] = ['smtp' => (membership_smtp_config() !== null), 'to' => substr($to, 0, 1) . '***' . substr($to, (int)strrpos($to, '@'))];
     if (!$out['unlocked']) return $out;
     $members = membership_read_json(membership_members_file(), []);
     $snapDir = membership_data_dir('snapshots');
@@ -42,7 +41,7 @@ function dev_status() {
         'sessionIdleHours' => MEMBERSHIP_SESSION_IDLE / 3600,
         'developerIdleMinutes' => MEMBERSHIP_DEV_IDLE / 60,
         'https' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
-        'recoveryEmail' => (is_array($SMTP ?? null) && !empty($SMTP['host'])) ? 'SMTP configured' : 'No SMTP in secrets.php (falls back to PHP mail(), may land in spam)',
+        'recoveryEmail' => (membership_smtp_config() !== null) ? 'SMTP configured' : 'No SMTP in secrets.php (falls back to PHP mail(), may land in spam)',
     ];
     return $out;
 }

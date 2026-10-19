@@ -225,20 +225,13 @@ Active in ClubExpress) drop out of the next export and therefore out of the rost
 location, `node sync\clubexpress-members.js --discover --headed` walks the path and prints what is visible at each step. Replace or revoke the token any
 time from Developer → Daily sync (the sync stops until a new token is installed). Local log: `App\sync\sync-members.local.log` (counts only, no member data).
 
-## Setting up recovery email (so "Forgot password" can send its link)
+## Setting up email for the reset links
 
-Emailed links need a mailbox the server can send from. Put its settings in the **server's** `secrets.php` (the local copy in `App\deploy\` has an empty block; fill it in, then
-upload the file by FTP into the app folder — the deploy script never uploads it). Never paste the mailbox password into a chat or a web page. Two ways:
-
-- **A dedicated mailbox on the club's own domain (recommended — if it is ever leaked it is not the club's main mailbox).** In Hostinger hPanel → Emails, create e.g.
-  `noreply@etccapps.com`, then: `host` `smtp.hostinger.com`, `port` 465, `secure` `ssl` (or 587 + `tls`), `username` and `from` = that address, `password` = its password.
-- **The club's Gmail (`etccwebsite.webmanager@gmail.com`).** Turn on 2-Step Verification for it, create an *App password* (Google Account → Security → App passwords), then: `host`
-  `smtp.gmail.com`, `port` 587, `secure` `tls`, `username` and `from` = the Gmail address, `password` = the 16-character app password (no spaces).
-
-`$RECOVERY_EMAIL` (who receives the links) stays the club's webmaster Gmail unless you change it. **Test:** website → Developer → **Recovery email → Send test email** (the page also shows
-whether SMTP is configured and the recipient, partly hidden). A success message and an email in the mailbox (check spam the first time) means "Forgot password" links will arrive.
-If it fails, the message says why (wrong password, wrong port, blocked login…).
-
+Reset links are sent through the **same Hostinger mailbox settings the Car Show app uses**, as these variables in the *server's* `secrets.php` (the local `App\deploy\secrets.php`
+already has them; upload that file by FTP — the deploy script never uploads it): `$SMTP_HOST`, `$SMTP_PORT` (465 = implicit TLS, 587 = STARTTLS), `$SMTP_USER`, `$SMTP_PASS`, `$SMTP_FROM`;
+optionally `$RECOVERY_EMAIL` for a different recipient. PHP's raw `mail()` is not used (on this hosting it reports success but fails to deliver to Gmail). Never paste the mailbox
+password into a chat or a web page. **Test:** website → Developer → **Recovery email → Send test email** — it shows whether SMTP is configured and the recipient (partly hidden); a success
+message plus an email in the admin inbox (check spam the first time) means the Forgot password links will arrive. A failure message says why (wrong password, port, blocked login…).
 ## Show: Members / Households / Both (site-wide)
 
 The dropdown at the right of the tab bar applies to **every page**. *Both* (default) shows `members/households`, e.g. 361/217;
@@ -301,26 +294,17 @@ Changing the website password signs out every other browser. **The developer pas
 in `data/auth.json`, which overrides the hash in `secrets.php` once set. Five wrong developer passwords from one
 address lock that menu for 15 minutes.
 
-## Forgot password (website login password and developer password, each on its own)
+## Forgot password (same mechanism as the Car Show app)
 
-The login page has a **Forgot password?** link (website login password) and the Developer unlock form has **Forgot the developer password?** Each opens
-`recover.php?for=site` / `?for=dev` and resets **only that password** with a new random one, shown once on screen (resetting the website password also signs
-everyone else out; resetting the developer password does not). Without `?for=` the page resets both. There is deliberately **no hardcoded master password**: a fixed
-password in the code would give permanent access to member data to anyone who ever saw it, however often the real passwords changed. Instead, `recover.php` accepts
-one of two out-of-band proofs, each one-shot and time-limited:
-
-1. **Emailed link.** Press *Email me a recovery link*: a one-time link (valid 30 minutes; only its SHA-256 hash is stored; it is bound to the password it was requested
-   for; a newer request replaces an older link) is sent to `$RECOVERY_EMAIL` from `secrets.php` (default `etccwebsite.webmanager@gmail.com`) — the recipient can never be
-   typed into the page. At most one email per 15 minutes **per password**, from anyone. Needs the `$SMTP` block in `secrets.php` (see `secrets.example.php`: host, port
-   587/`tls` or 465/`ssl`, mailbox login, from address); with `host` empty it falls back to PHP `mail()`, which often works on shared hosting but may land in spam.
-2. **FTP trigger.** Upload an **empty** file into the app folder by FTP and open `recover.php` within 15 minutes: `data/RESET-SITE-PASSWORD` (website login),
-   `data/RESET-DEV-PASSWORD` (developer) or `data/RESET-PASSWORDS` (both). Works even with no email set up or a broken `secrets.php`.
-
-Each trigger is single-use and is deleted when used. After a reset, log in with the new random password and set your own: Developer → *Change website login password*
-or *Change developer password*. A changed developer password also opens the website. Trade-offs: whoever controls the recovery mailbox or FTP can reset access (the
-same trust the site already places in them), and anyone can make the page send the club one recovery email per 15 minutes per password (it does nothing unless the link is
-opened). A plain page view never changes anything; only the confirm button (a POST) does.
-
+- **Website login password:** the login page's **Forgot password?** link opens `forgot-password.php`. Pressing *Email a reset link* emails a one-time link (valid **24 hours**) to the
+  club's admin address (`$RECOVERY_EMAIL`, default `etccwebsite.webmanager@gmail.com`) — never an address typed into the page. The link opens `reset-password.php`, where you
+  **choose the new password** (at least 8 characters). Everyone else is signed out. The link works once.
+- **Developer password:** the Developer unlock form's **Forgot the developer password?** opens `dev-forgot-password.php`, which (as in the Car Show app) is only reachable while logged in to
+  the website, and works the same way through `dev-reset-password.php`. A changed developer password also opens the website.
+- **Differences from the Car Show app (internal):** the new password's hash is stored in `data/auth.json` (as when changed in the Developer menu) rather than rewriting `secrets.php`; the
+  token is stored only as a hash; and a reset email can be sent at most once every 5 minutes per password so the public page cannot flood the admin inbox.
+- **If email isn't working:** delete the password entries by FTP — removing `data/auth.json` makes the website password fall back to `$PASSWORD_HASH` in `secrets.php` and the developer password
+  fall back to the initial one (change both again straight away) — or fix the mailbox settings below and use Developer → Recovery email → *Send test email*.
 ## Backup and restore
 
 - `/ETCCMMBackup` downloads `members-data.json`, `member-import-history.json` and the `data/`

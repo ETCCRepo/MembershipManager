@@ -5,16 +5,12 @@
 // Left empty, every login attempt is rejected.
 $PASSWORD_HASH = '';
 
-// ---- Emailed password-recovery link (recover.php). Optional: without it the
-// FTP-upload recovery method still works. The link always goes to
-// $RECOVERY_EMAIL, never to an address typed into the page.
-$RECOVERY_EMAIL = 'etccwebsite.webmanager@gmail.com';
-$SMTP = [
-    'host' => '',          // your mailbox provider's SMTP host; empty = fall back to PHP mail()
-    'port' => 587,         // 587 with 'tls' (STARTTLS), or 465 with 'ssl'
-    'secure' => 'tls',     // 'tls' | 'ssl' | '' (none; not recommended)
-    'username' => '',      // the mailbox login
-    'password' => '',      // the mailbox password
-    'from' => '',          // sender address, usually the same mailbox
-    'fromName' => 'ETCC Membership Manager',
-];
+// ---- "Forgot password" emails (same settings as the Car Show app's secrets.php). A mailbox created in Hostinger
+// hPanel > Emails works: port 465 is implicit TLS, 587 is STARTTLS. Without these the Forgot password pages cannot send.
+$SMTP_HOST = 'smtp.hostinger.com';
+$SMTP_PORT = 465;
+$SMTP_USER = 'replace-with-real-mailbox@etccapps.com';
+$SMTP_PASS = 'replace-with-real-mailbox-password';
+$SMTP_FROM = 'replace-with-real-mailbox@etccapps.com';
+// Optional: who receives the reset links (default etccwebsite.webmanager@gmail.com).
+// $RECOVERY_EMAIL = 'etccwebsite.webmanager@gmail.com';
