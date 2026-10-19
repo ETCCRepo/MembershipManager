@@ -30,7 +30,7 @@
     report: "new",
     search: "", sortKey: "lastName", sortDir: "asc",
     detailMember: null, list: null, menuOpen: false,
-    imp: null, chartPage: null, view: loadView(),
+    imp: null, chartPage: null, view: loadView(), settings: { renewalStart: "10-01", renewalEnd: "12-31" },
     meetingEnd: null, meetingOpts: { joined: true, summary: true, renewals: true, anniversaries: true },
     dev: { loading: false, unlocked: false, system: null, message: "", error: "" }
   };
@@ -56,6 +56,11 @@
   function today() { return R.todayET(); }
   function unitWord(n) { return state.unit === "households" ? (n === 1 ? "household" : "households") : (n === 1 ? "person" : "people"); }
   // Every count card shows members/households. households = single members + couple members / 2.
+  // Renewal start/end (month-day) set in the Developer menu and shared by every browser.
+  function renewalCfg() { return { start: state.settings.renewalStart, end: state.settings.renewalEnd }; }
+  function windowText(w, t) {
+    return w.open ? "renewal window closes " + L.formatDate(w.end) + " (" + R.daysBetween(t, w.end) + " days)" : "next renewal window opens " + L.formatDate(w.nextStart);
+  }
   function viewKinds() { return state.view === "both" ? ["members", "households"] : [state.view]; }
   function kindCount(list, kind) { return kind === "households" ? R.householdTotal(list) : list.length; }
   function viewCounts(list) { return viewKinds().map(function (k) { return kindCount(list, k); }); }
@@ -83,7 +88,8 @@
       renderViews();
     },
     ingestImportLog: function (log) { state.importLog = Array.isArray(log) ? log : []; renderViews(); },
-    ingestSnapshots: function (snaps) { state.snapshots = Array.isArray(snaps) ? snaps : []; renderViews(); }
+    ingestSnapshots: function (snaps) { state.snapshots = Array.isArray(snaps) ? snaps : []; renderViews(); },
+    ingestSettings: function (st) { if (st && typeof st === "object") { state.settings = { renewalStart: st.renewalStart || "10-01", renewalEnd: st.renewalEnd || "12-31" }; renderViews(); } }
   };
 
   // ---------- derived data ----------
@@ -373,9 +379,9 @@
     grid.appendChild(kpi("In records since 1958", mmhh(withJoin), "current roster with a join date; earliest " + (earliest ? L.formatDate(earliest) : "—") + ". Not a complete club history.", function () { openList("Roster members with a join date", withJoin); }));
     var ren = R.renewals(pool, t);
     grid.appendChild(kpi("Renewals due in 30 days", mmhh(ren.due30), mmhh(ren.due90) + " within 90 days", function () { openList("Renewals due within 30 days", ren.due30); }));
-    var rs = R.renewalStatus(pool, t), tgt = L.formatDate(rs.target);
-    grid.appendChild(kpi("Renewed", mmhh(rs.renewed), "expire " + tgt + " or later (already renewed)", function () { openList("Renewed — expire " + tgt + " or later", rs.renewed); }));
-    grid.appendChild(kpi("Left to renew", mmhh(rs.left), "current, but expire before " + tgt, function () { openList("Left to renew — expire before " + tgt, rs.left); }));
+    var rs = R.renewalStatus(pool, t, renewalCfg()), tgt = L.formatDate(rs.target);
+    grid.appendChild(kpi("Renewed", mmhh(rs.renewed), "expire " + tgt + " or later", function () { openList("Renewed — expire " + tgt + " or later", rs.renewed); }));
+    grid.appendChild(kpi("Left to renew", mmhh(rs.left), "current, expire before " + tgt + " · " + windowText(rs.window, t), function () { openList("Left to renew — expire before " + tgt, rs.left); }));
     grid.appendChild(kpi("Expired", mmhh(rs.expired), "expiration date before today", function () { openList("Expired — expiration date before today", rs.expired); }));
     grid.appendChild(kpi("Latest import", latest, state.importLog.length ? state.importLog[0].sourceFile || "" : ""));
     view.appendChild(grid);
@@ -479,8 +485,8 @@
       spec.sections.push(sc, ss, sz);
     } else if (state.report === "renewals") {
       var r = R.renewals(pool, t);
-      var rs2 = R.renewalStatus(pool, t), tg2 = L.formatDate(rs2.target);
-      spec.explain = "Renewed = expiration date on or after the renewal target (" + tg2 + "), Left to renew = still current but expiring before it, Expired = expiration date already passed; the target is the year-end renewals are working toward (renewal season is assumed to start October 1). Uses the expiration date column. Due = expires between today and the stated number of days; Expired = status Active but the date has passed (so it needs attention). Expirations more than five years out (role/lifetime accounts) are shown as no expiry. ClubExpress memberships here usually expire together on one date, so expect one large month.";
+      var rs2 = R.renewalStatus(pool, t, renewalCfg()), tg2 = L.formatDate(rs2.target);
+      spec.explain = "Renewed = expiration date on or after the renewal target (" + tg2 + "), Left to renew = still current but expiring before it, Expired = expiration date already passed; the target is the year-end renewals are working toward (renewal window " + L.formatDate(rs2.window.start) + " to " + L.formatDate(rs2.window.end) + ", set in the Developer menu). Uses the expiration date column. Due = expires between today and the stated number of days; Expired = status Active but the date has passed (so it needs attention). Expirations more than five years out (role/lifetime accounts) are shown as no expiry. ClubExpress memberships here usually expire together on one date, so expect one large month.";
       spec.sections.push({ title: "Expirations by month", chart: function () { return C.bar(chartRows(r.byExpirationMonth), { ariaLabel: "Expirations by month", onSelect: function (x) { openList("Expiring " + x.label, x.members); } }); },
         header: ["Month"].concat(viewNames("")), rows: r.byExpirationMonth.map(function (m) { return [m.label].concat(viewCounts(m.members)); }), members: r.byExpirationMonth.map(function (m) { return m.members; }) });
       var sum = [["Renewed (expire " + tg2 + " or later)", rs2.renewed], ["Left to renew (expire before " + tg2 + ")", rs2.left], ["Expired (date before today)", rs2.expired], ["Active but past expiration", r.expiredStillActive], ["Due within 30 days", r.due30], ["Due within 60 days", r.due60], ["Due within 90 days", r.due90], ["No expiry (far-future date)", r.noExpiry]];
@@ -1305,6 +1311,45 @@
     view.appendChild(passwordForm("Change developer password",
       "The password for this Developer area. You must enter the current one. At least " + MIN_PASSWORD + " characters.",
       [c0, d1, d2], "change_dev_password", function () { return { currentPassword: c0.input.value, newPassword: d1.input.value }; }, "Change developer password"));
+
+    // Renewal dates: month and day only. Memberships expire on the END date; the window repeats every year.
+    var MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    function mdPicker(label, value) {
+      var ms = el("select", { "aria-label": label + " month" }), ds = el("select", { "aria-label": label + " day" });
+      MONTHS.forEach(function (n, i) { var o = el("option", { value: String(i + 1), text: n }); if (i + 1 === Number(value.slice(0, 2))) o.selected = true; ms.appendChild(o); });
+      for (var i = 1; i <= 31; i++) { var o = el("option", { value: String(i), text: String(i) }); if (i === Number(value.slice(3))) o.selected = true; ds.appendChild(o); }
+      function two(n) { return (Number(n) < 10 ? "0" : "") + Number(n); }
+      return { month: ms, day: ds, row: el("div", { class: "toolbar" }, [el("strong", { text: label }), ms, ds]), get: function () { return two(ms.value) + "-" + two(ds.value); } };
+    }
+    var rStart = mdPicker("Renewals start", state.settings.renewalStart), rEnd = mdPicker("Renewals end (memberships expire)", state.settings.renewalEnd);
+    var rMsg = el("div", { class: "hint", role: "status" }), rPrev = el("div", { class: "hint" });
+    function rValid(v) { var m = Number(v.slice(0, 2)), d = Number(v.slice(3)); return d <= new Date(Date.UTC(2001, m, 0)).getUTCDate(); }
+    function rPreview() {
+      var a = rStart.get(), b = rEnd.get();
+      if (!rValid(a) || !rValid(b)) { rPrev.textContent = "That month does not have that many days."; return; }
+      var w = R.renewalWindow(today(), { start: a, end: b });
+      rPrev.textContent = "Current renewal window: " + L.formatDate(w.start) + " to " + L.formatDate(w.end) + " (" + (w.open ? "open now" : "closed; next opens " + L.formatDate(w.nextStart)) + "). Members who have renewed expire " + L.formatDate(w.target) + " or later.";
+    }
+    [rStart.month, rStart.day, rEnd.month, rEnd.day].forEach(function (x) { x.addEventListener("change", rPreview); });
+    var rSave = el("button", { class: "btn primary", type: "submit" }, ["Save renewal dates"]);
+    var rForm = el("form", { class: "panel pw-form" }, [el("h3", { text: "Renewal dates" }),
+      el("div", { class: "hint", text: "When the club's renewal window opens and closes each year. Memberships expire on the end date; the Renewed / Left to renew / Expired cards use these dates." }),
+      rStart.row, rEnd.row, rPrev, el("div", { class: "toolbar" }, [rSave]), rMsg]);
+    rForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var a = rStart.get(), b = rEnd.get();
+      if (!rValid(a) || !rValid(b)) { rMsg.className = "errors"; rMsg.textContent = "That month does not have that many days."; return; }
+      rSave.disabled = true; rMsg.className = "hint"; rMsg.textContent = "Saving…";
+      devApi("save_settings", { renewalStart: a, renewalEnd: b }).then(function (j) {
+        rSave.disabled = false;
+        if (j && j.ok) {
+          if (j.settings) state.settings = { renewalStart: j.settings.renewalStart, renewalEnd: j.settings.renewalEnd };
+          rMsg.className = "success"; rMsg.textContent = j.message || "Saved."; rPreview();
+        } else { rMsg.className = "errors"; rMsg.textContent = (j && j.error) || "Could not save."; if (j && j.httpStatus === 403) { state.dev.unlocked = false; renderViews(); } }
+      }).catch(function () { rSave.disabled = false; rMsg.className = "errors"; rMsg.textContent = "Could not reach the server. Nothing was changed."; });
+    });
+    view.appendChild(rForm);
+    rPreview();
 
     view.appendChild(el("div", { class: "panel" }, [el("h3", { text: "System check" }), el("div", { id: "devSystem" })]));
     setTimeout(renderSystemCheck, 0);

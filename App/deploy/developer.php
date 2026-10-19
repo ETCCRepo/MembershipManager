@@ -20,6 +20,7 @@ function dev_status() {
     global $SMTP;
     $auth = membership_auth_read();
     $out = ['ok' => true, 'unlocked' => membership_dev_unlocked()];
+    $out['settings'] = membership_settings_read();
     if (!$out['unlocked']) return $out;
     $members = membership_read_json(membership_members_file(), []);
     $snapDir = membership_data_dir('snapshots');
@@ -92,6 +93,19 @@ if ($action === 'change_site_password') {
     // Every other browser is signed out; keep this one signed in.
     $_SESSION['membership_auth_version'] = (int)($saved['siteVersion'] ?? 0);
     dev_out(200, array_merge(dev_status(), ['message' => 'Website login password changed. Everyone else has been signed out.']));
+}
+
+if ($action === 'save_settings') {
+    $changes = [];
+    foreach (['renewalStart', 'renewalEnd'] as $k) {
+        if (!isset($body[$k])) continue;
+        if (!membership_valid_mmdd($body[$k])) dev_out(422, ['ok' => false, 'error' => 'Choose a valid month and day for the ' . ($k === 'renewalStart' ? 'renewal start' : 'renewal end') . ' (February 29 is not allowed).']);
+        $changes[$k] = $body[$k];
+    }
+    if (!$changes) dev_out(422, ['ok' => false, 'error' => 'Nothing to save.']);
+    $saved = membership_settings_update($changes);
+    if (!$saved) dev_out(500, ['ok' => false, 'error' => 'Could not save the settings. Nothing was changed.']);
+    dev_out(200, array_merge(dev_status(), ['message' => 'Renewal dates saved. Everyone sees them on their next page load.']));
 }
 
 if ($action === 'change_dev_password') {

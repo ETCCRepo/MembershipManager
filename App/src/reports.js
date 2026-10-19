@@ -275,27 +275,38 @@
     return { expiredStillActive: expired, due30: due30, due60: due60, due90: due90, noExpiry: noExpiry, byExpirationMonth: months };
   }
 
-  // ---- renewal cycle ----------------------------------------------------------------
-  // ClubExpress memberships here expire on 12/31. Renewal season is assumed to start on
-  // October 1: from then until the next September, "renewal target" is the coming year-end
-  // after next-year renewals open (12/31 of next year before that, of this year after).
-  //   Oct 1 2026 .. Dec 31 2026 -> target 12/31/2027   (members who already renewed for 2027)
-  //   Jan 1 2027 .. Sep 30 2027 -> target 12/31/2027   (members paid up for 2027)
-  var RENEWAL_SEASON_START_MONTH = 10;
-  function renewalTarget(today) {
-    var p = parts(today);
-    return ymd(p.y + (p.m >= RENEWAL_SEASON_START_MONTH ? 1 : 0), 12, 31);
+  // ---- renewal window and cycle ------------------------------------------------------
+  // The club sets a renewal START and END as month-day (Developer menu; default 10-01 and 12-31).
+  // Memberships expire on the END date. The window for a year runs from START through the first END
+  // on or after it, so it may wrap a year-end (start 11-15, end 01-31). Members who renew in the
+  // window are extended one year, so the renewal TARGET is the END date a year after the window's end.
+  var RENEWAL_DEFAULTS = { start: "10-01", end: "12-31" };
+  function mmdd(v, fallback) {
+    var m = /^(\d{2})-(\d{2})$/.exec(v || "");
+    if (m && validYmdParts(2001, +m[1], +m[2])) return { m: +m[1], d: +m[2] };
+    return fallback ? mmdd(fallback) : null;
   }
+  function validYmdParts(y, m, d) { return m >= 1 && m <= 12 && d >= 1 && d <= daysInMonth(y, m); }
+  // The most recent window that has started on/before `today`.
+  function renewalWindow(today, cfg) {
+    cfg = cfg || {};
+    var S = mmdd(cfg.start, RENEWAL_DEFAULTS.start), E = mmdd(cfg.end, RENEWAL_DEFAULTS.end), t = parts(today);
+    var sy = (t.m > S.m || (t.m === S.m && t.d >= S.d)) ? t.y : t.y - 1;
+    var ey = (E.m > S.m || (E.m === S.m && E.d >= S.d)) ? sy : sy + 1;
+    var start = ymd(sy, S.m, S.d), end = ymd(ey, E.m, E.d);
+    return { start: start, end: end, open: today >= start && today <= end, target: ymd(ey + 1, E.m, E.d), nextStart: ymd(sy + 1, S.m, S.d) };
+  }
+  function renewalTarget(today, cfg) { return renewalWindow(today, cfg).target; }
   // Renewed = expires on/after the target; Left to renew = still current but expires before the
   // target; Expired = expiration date already passed; No expiry = far-future (role/lifetime) dates.
-  function renewalStatus(members, today) {
-    var target = renewalTarget(today), horizon = addMonths(today, 60);
-    var out = { target: target, renewed: [], left: [], expired: [], noExpiry: [] };
+  function renewalStatus(members, today, cfg) {
+    var w = renewalWindow(today, cfg), horizon = addMonths(today, 60);
+    var out = { target: w.target, window: w, renewed: [], left: [], expired: [], noExpiry: [] };
     members.forEach(function (m) {
       var e = m.expirationDate;
       if (!e || e > horizon) out.noExpiry.push(m);
       else if (e < today) out.expired.push(m);
-      else if (e >= target) out.renewed.push(m);
+      else if (e >= w.target) out.renewed.push(m);
       else out.left.push(m);
     });
     return out;
@@ -470,7 +481,7 @@
     firstTuesday: firstTuesday, rangeLabel: rangeLabel, meetingPeriodEndingIn: meetingPeriodEndingIn, meetingPeriodAfter: meetingPeriodAfter,
     meetingPeriods: meetingPeriods, anniversariesInRange: anniversariesInRange, expiringInRange: expiringInRange,
     bucketsNew: bucketsNew, granularityFor: granularityFor, sampleDates: sampleDates, totalsOverTime: totalsOverTime,
-    renewalTarget: renewalTarget, renewalStatus: renewalStatus,
+    renewalTarget: renewalTarget, renewalWindow: renewalWindow, renewalStatus: renewalStatus, RENEWAL_DEFAULTS: RENEWAL_DEFAULTS,
     snapshotSeries: snapshotSeries, snapshotChanges: snapshotChanges, bucketMembers: bucketMembers
   };
   if (typeof module === "object" && module.exports) module.exports = api;

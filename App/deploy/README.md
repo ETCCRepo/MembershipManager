@@ -185,14 +185,15 @@ The dropdown at the right of the tab bar applies to **every page**. *Both* (defa
 *Households* and *Both*), and every report chart and table (a column per kind shown). The choice is remembered in the browser.
 Households = single members + couple members ÷ 2.
 
-## Renewal cards (Renewed / Left to renew / Expired)
+## Renewal cards (Renewed / Left to renew / Expired) and renewal dates
 
 Based on the expiration date (the export's `last_renewal_date` is filled for only a few members, so it is not used).
-The **renewal target** is the year-end renewals are working toward: **12/31 of next year from October 1** (renewal season is
-*assumed* to start October 1 — change `RENEWAL_SEASON_START_MONTH` in `App/src/reports.js` if the club opens renewals earlier or later),
-and 12/31 of the current year from January 1 to September 30.
-- **Renewed** — expires on or after the target (already paid through next year-end).
-- **Left to renew** — still current (expires today or later) but before the target.
+The club's **renewal start and end dates** (month and day, repeating every year) are set in the **Developer menu → Renewal dates**
+(defaults Oct 1 and Dec 31) and stored on the server (`data/settings.json`), so every browser sees the same dates. Memberships expire on
+the **end** date; the window may wrap a year-end (e.g. Nov 15 to Jan 31). The **renewal target** is the end date one year after the most
+recent window's end — e.g. with Oct 1 – Dec 31 it is 12/31/2027 from Oct 1 2026 until Sep 30 2027.
+- **Renewed** — expires on or after the target (already renewed for the next cycle).
+- **Left to renew** — still current (expires today or later) but before the target; its card also shows when the window closes or next opens.
 - **Expired** — expiration date is before today (this replaces the older "Active but past expiration" card).
 Role/lifetime accounts (expiring 5+ years out) are left out. The Reports → Renewals & expirations table has the same three groups.
 
@@ -275,3 +276,9 @@ full/partial semantics, export safety, period boundaries, every metric, chart-vs
 snapshot movement. Fixtures are synthetic.
 The PHP files (`lib.php`, `members-import.php`, `index.php`) are **not** covered by `npm test`; they were
 checked by review only until PHP is installed and exercised on the server.
+
+## Version number
+
+The footer shows `vYYYY.MM.DD.NN`: the build date (America/New_York) and a two-digit counter that goes up on every build and restarts at
+01 each day (remembered in `App/version.json`). `MEMBERSHIP_VERSION=2026.10.19.05 node build.js` forces a version for one build;
+`MEMBERSHIP_NO_BUMP=1` builds without recording one (previews).

@@ -339,6 +339,28 @@ test("every member lands in exactly one renewal group; groups follow the dates",
   assert.ok(rs.left.some(function (m) { return m.lastName === "Soon"; }));
   assert.ok(rs.left.every(function (m) { return m.expirationDate >= TODAY && m.expirationDate < "2027-12-31"; }));
 });
+test("renewal window follows the configured start/end, including a window that wraps the year-end", function () {
+  var w = R.renewalWindow("2026-10-19", { start: "10-01", end: "12-31" });
+  eq([w.start, w.end, w.open, w.target], ["2026-10-01", "2026-12-31", true, "2027-12-31"]);
+  w = R.renewalWindow("2026-09-15", { start: "10-01", end: "12-31" });
+  eq([w.start, w.end, w.open, w.target, w.nextStart], ["2025-10-01", "2025-12-31", false, "2026-12-31", "2026-10-01"]);
+  var cfg = { start: "11-15", end: "01-31" };
+  w = R.renewalWindow("2026-12-01", cfg); eq([w.start, w.end, w.open, w.target], ["2026-11-15", "2027-01-31", true, "2028-01-31"]);
+  w = R.renewalWindow("2027-01-20", cfg); eq([w.start, w.end, w.open, w.target], ["2026-11-15", "2027-01-31", true, "2028-01-31"]);
+  w = R.renewalWindow("2027-02-10", cfg); eq([w.start, w.end, w.open, w.target], ["2026-11-15", "2027-01-31", false, "2028-01-31"]);
+  w = R.renewalWindow("2027-11-20", cfg); eq(w.target, "2029-01-31");
+});
+test("an invalid or missing configuration falls back to the defaults (Oct 1 - Dec 31)", function () {
+  eq(R.renewalTarget("2026-10-19", { start: "13-45", end: "nope" }), "2027-12-31");
+  eq(R.renewalTarget("2026-10-19"), "2027-12-31");
+  eq(R.renewalTarget("2026-10-19", { start: "02-29", end: "12-31" }), "2027-12-31");
+});
+test("moving the start date moves the target: with start 11-01 it is still the current cycle on Oct 19", function () {
+  eq(R.renewalTarget("2026-10-19", { start: "11-01", end: "12-31" }), "2026-12-31");
+  var rs = R.renewalStatus(peoplePool, TODAY, { start: "11-01", end: "12-31" });
+  eq(rs.target, "2026-12-31");
+  assert.ok(rs.renewed.length > rs.left.length); // most members are paid through 12/31/2026
+});
 test("after the year-end passes, unrenewed members are expired and renewed ones are current", function () {
   var rs = R.renewalStatus([{ expirationDate: "2026-12-31" }, { expirationDate: "2027-12-31" }], "2027-02-01");
   eq([rs.expired.length, rs.renewed.length, rs.left.length], [1, 1, 0]);

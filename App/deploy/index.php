@@ -63,6 +63,7 @@ $bootScript = "\n<script>\n(function(){\n  function boot(){\n" .
     membership_safe_inline_json($data['importedAt'] ?? null) . ");\n" .
     "    window.__membership.ingestImportLog(" . membership_safe_inline_json($importLog) . ");\n" .
     "    window.__membership.ingestSnapshots(" . membership_safe_inline_json(membership_snapshots()) . ");\n" .
+    "    window.__membership.ingestSettings(" . membership_safe_inline_json(membership_settings_read()) . ");\n" .
     "  }\n  if (document.readyState === \"loading\") document.addEventListener(\"DOMContentLoaded\", boot);\n  else boot();\n})();\n</script>\n";
 $bundle = str_replace('</body>', $bootScript . '</body>', $bundle);
 

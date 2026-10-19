@@ -412,3 +412,41 @@ function membership_recovery_reset_passwords() {
     $saved = membership_auth_update(['siteHash' => membership_hash_password($site), 'devHash' => membership_hash_password($dev)]);
     return $saved ? ['site' => $site, 'dev' => $dev] : false;
 }
+
+
+// ---- Club settings edited in the Developer menu (data/settings.json, denied to HTTP).
+// Renewal start/end are month-day strings ("10-01", "12-31"); memberships expire on the end date.
+function membership_settings_file() {
+    return membership_data_dir() . '/settings.json';
+}
+
+function membership_settings_defaults() {
+    return ['renewalStart' => '10-01', 'renewalEnd' => '12-31'];
+}
+
+function membership_valid_mmdd($s) {
+    return is_string($s) && preg_match('/^(\d{2})-(\d{2})$/', $s, $m) === 1 && checkdate((int)$m[1], (int)$m[2], 2001);
+}
+
+function membership_settings_read() {
+    $defaults = membership_settings_defaults();
+    $stored = membership_read_json(membership_settings_file(), []);
+    $out = $defaults;
+    foreach ($defaults as $k => $_) {
+        if (isset($stored[$k]) && membership_valid_mmdd($stored[$k])) $out[$k] = $stored[$k];
+    }
+    return $out;
+}
+
+// Merges validated changes into settings.json under a lock. Returns the new settings or false.
+function membership_settings_update($changes) {
+    $file = membership_settings_file();
+    return membership_with_lock($file, function () use ($file, $changes) {
+        $cur = membership_settings_read();
+        foreach (array_keys(membership_settings_defaults()) as $k) {
+            if (isset($changes[$k])) $cur[$k] = $changes[$k];
+        }
+        $cur['updatedAt'] = gmdate('c');
+        return membership_write_json($file, $cur) ? membership_settings_read() : false;
+    });
+}

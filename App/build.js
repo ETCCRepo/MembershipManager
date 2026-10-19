@@ -24,22 +24,32 @@ var scripts = [
   read("src/app.js")
 ].map(safeJs);
 
-// Version: starts at 1.0 and bumps the minor number on every build, stamped
-// into the footer at build time (same scheme as CarShow's build.js).
-// MEMBERSHIP_VERSION=1.7 overrides it for one build.
+// Version: YYYY.MM.DD.NN - the build date (America/New_York) plus a two-digit counter that goes up on
+// every build and restarts at 01 each day, stamped into the footer. version.json remembers the last one.
+// MEMBERSHIP_VERSION=2026.10.19.05 uses exactly that version for one build (the counter continues from
+// it); MEMBERSHIP_NO_BUMP=1 builds without recording a version (previews).
 var VERSION_PATH = path.join(HERE, "version.json");
-var version = { major: 1, minor: 0 };
+var builtAt = new Date();
+var todayStamp = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(builtAt).replace(/-/g, ".");
+var last = { date: "", n: 0 };
 if (fs.existsSync(VERSION_PATH)) {
-  try { version = JSON.parse(fs.readFileSync(VERSION_PATH, "utf8")); } catch (e) { /* fall back to 1.0 */ }
+  try {
+    var saved = JSON.parse(fs.readFileSync(VERSION_PATH, "utf8"));
+    if (saved && /^\d{4}\.\d{2}\.\d{2}$/.test(saved.date || "") && saved.n > 0) last = { date: saved.date, n: saved.n };
+  } catch (e) { /* unreadable or the old major.minor format: start today at 01 */ }
 }
 var override = (process.env.MEMBERSHIP_VERSION || "").trim();
-var overrideMatch = override.match(/^(\d+)\.(\d+)$/);
-if (overrideMatch) version = { major: Number(overrideMatch[1]), minor: Number(overrideMatch[2]) };
-else if (override) throw new Error('MEMBERSHIP_VERSION must look like "1.7" (got "' + override + '").');
-var versionString = version.major + "." + version.minor;
-var builtAt = new Date();
+var next;
+if (override) {
+  var om = override.match(/^(\d{4}\.\d{2}\.\d{2})\.(\d{2})$/);
+  if (!om) throw new Error('MEMBERSHIP_VERSION must look like "2026.10.19.05" (got "' + override + '").');
+  next = { date: om[1], n: Number(om[2]) };
+} else {
+  next = { date: todayStamp, n: last.date === todayStamp ? last.n + 1 : 1 };
+}
+var versionString = next.date + "." + (next.n < 10 ? "0" : "") + next.n;
 if (!process.env.MEMBERSHIP_NO_BUMP) {
-  fs.writeFileSync(VERSION_PATH, JSON.stringify({ major: version.major, minor: version.minor + 1, lastBuilt: builtAt.toISOString() }, null, 2) + "\n");
+  fs.writeFileSync(VERSION_PATH, JSON.stringify({ date: next.date, n: next.n, lastBuilt: builtAt.toISOString() }, null, 2) + "\n");
 }
 
 function fmtDateTime(d) {
