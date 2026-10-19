@@ -255,6 +255,7 @@ table.grid.static tbody tr.click { cursor: pointer; }
 .ctl.stack { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin: 10px 0; max-width: 360px; font-weight: 600; }
 .ctl.stack input { padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 14px; font-family: inherit; font-weight: 400; }
 .pw-form { max-width: 520px; }
+.pw-form.wide { max-width: 980px; }
 .dev-view .panel table.grid td:first-child { color: var(--muted); font-weight: 600; width: 55%; }
 
 /* ---------- TableKit column headers (standard sort/filter header, from CarShow / Silent Auction Manager) ---------- */

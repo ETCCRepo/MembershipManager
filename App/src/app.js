@@ -1274,14 +1274,19 @@
 
     // Daily sync: a token for the scheduled task on the club's computer, plus the last run's result.
     var sy = state.dev.sync || state.sync || {};
-    var syBox = el("div", { class: "panel pw-form" }, [el("h3", { text: "Data Import" }),
+    var syBox = el("div", { class: "panel pw-form wide" }, [el("h3", { text: "Data Import" }),
       el("div", { class: "hint", text: "A task on the club's computer exports the ClubExpress Additional Member Data report on the schedule set below and sends it here. Sync now asks it to run on its next check (about every 5 minutes). It signs in with a sync token, not a password; the server keeps only the token's hash." }),
       el("div", { text: "Token: " + (sy.tokenSet ? "created " + fmtDateTime(sy.tokenCreatedAt) : "none (automatic data import is off)") }),
       el("div", { text: "Last run: " + (sy.lastRunAt ? fmtDateTime(sy.lastRunAt) + " — " + (sy.ok ? "ok" : "FAILED") + (sy.message ? " (" + sy.message + ")" : "") : "never") })]);
     var syMsg = el("div", { class: "hint", role: "status" });
     // Manual sync: only records a request; the club computer's poll task (every ~5 minutes) picks it up.
     var pending = !!sy.requestedAt;
-    if (pending) syBox.appendChild(el("div", { class: "hint", role: "status", text: (sy.claimedAt ? "Sync running on the club computer (started " + fmtDateTime(sy.claimedAt) + ")" : "Sync requested " + fmtDateTime(sy.requestedAt) + " — waiting for the club computer to pick it up (it checks about every 5 minutes)") + ". Reopen this page to see the result." }));
+    if (pending) syBox.appendChild(el("div", { class: "hint", role: "status", text: (sy.claimedAt ? "Sync running on the club computer (started " + fmtDateTime(sy.claimedAt) + ")" : "Sync requested " + fmtDateTime(sy.requestedAt) + " — waiting for the club computer to pick it up (it checks about every 5 minutes)") + ". This updates by itself." }));
+    // While a request is waiting or running, re-check every 15 seconds so the result shows without reopening the page.
+    if (pending) setTimeout(function () {
+      if (state.tab !== "developer" || !state.dev.unlocked) return;
+      devApi("status").then(function (j) { applyDev(j); }).catch(function () { /* try again at the next render */ });
+    }, 15000);
     var now = el("button", { class: "btn primary", type: "button" }, ["Sync now"]);
     if (!sy.tokenSet || pending) now.disabled = true;
     now.addEventListener("click", function () {
