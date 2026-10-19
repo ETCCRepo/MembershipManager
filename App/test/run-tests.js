@@ -301,6 +301,13 @@ test("new households by month sum to the households among the new members (chart
   eq(months.reduce(function (a, m) { return a + m.people; }, 0), nm.length);
 });
 
+console.log("Server PHP (static checks; PHP itself is not installed here)");
+test("every membership_* function and MEMBERSHIP_* constant the PHP uses is defined (a missing one is an HTTP 500 on that path)", function () {
+  var r = require("./php-undefined-check.js").check(path.join(__dirname, "..", "deploy"));
+  eq(r.problems, []);
+  assert.ok(r.functions > 60 && r.files >= 10, "the checker should see the real deploy folder");
+});
+
 console.log("Daily sync script (sync/sync-members.js)");
 test("a dry run on the synthetic export reads, checks and counts it, and sends nothing", function () {
   var cp = require("child_process");
