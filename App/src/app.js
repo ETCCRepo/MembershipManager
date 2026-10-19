@@ -1106,6 +1106,7 @@
       state.dev.unlocked = !!j.unlocked;
       state.dev.system = j.system || null;
       if (j.sync) { state.sync = j.sync; state.dev.sync = j.sync; }
+      if (j.mail) state.dev.mail = j.mail;
       state.dev.error = "";
       state.dev.message = keepMessage ? (j.message || "") : "";
     } else {
@@ -1249,6 +1250,26 @@
 
     // Import members (moved here from its own tab): file -> preview -> confirm, plus the import history.
     view.appendChild(buildImportView());
+
+    // Recovery email: how "Forgot password" links are delivered, with a safe way to test it.
+    var mail = state.dev.mail || {};
+    var mailBox = el("div", { class: "panel pw-form" }, [el("h3", { text: "Recovery email" }),
+      el("div", { class: "hint", text: "The \"Forgot password\" pages email a one-time link to the club's recovery mailbox. The mailbox and the mail-server login are set in secrets.php on the server (never typed into a web page)." }),
+      el("div", { text: "Recovery mailbox: " + (mail.to || "—") }),
+      el("div", { text: "Mail server (SMTP): " + (mail.smtp ? "configured" : "not set up — emailed links cannot be sent yet (the FTP method still works)") })]);
+    var mailMsg = el("div", { class: "hint", role: "status" });
+    var testBtn = el("button", { class: "btn primary", type: "button" }, ["Send test email"]);
+    testBtn.addEventListener("click", function () {
+      testBtn.disabled = true; mailMsg.className = "hint"; mailMsg.textContent = "Sending…";
+      devApi("test_email").then(function (j) {
+        testBtn.disabled = false;
+        if (j && j.ok) { mailMsg.className = "success"; mailMsg.textContent = j.message || "Sent."; }
+        else { mailMsg.className = "errors"; mailMsg.textContent = (j && j.error) || "Could not send."; }
+      }).catch(function () { testBtn.disabled = false; mailMsg.className = "errors"; mailMsg.textContent = "Could not reach the server."; });
+    });
+    mailBox.appendChild(el("div", { class: "toolbar" }, [testBtn]));
+    mailBox.appendChild(mailMsg);
+    view.appendChild(makeCollapsible(mailBox, "dev:mail"));
 
     // Daily sync: a token for the scheduled task on the club's computer, plus the last run's result.
     var sy = state.dev.sync || state.sync || {};

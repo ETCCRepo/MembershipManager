@@ -5,6 +5,7 @@
 // (data/auth.json, denied to HTTP); passwords are never logged or returned.
 require __DIR__ . '/secrets.php';
 require __DIR__ . '/lib.php';
+require __DIR__ . '/mailer.php';
 membership_session_start();
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('X-Content-Type-Options: nosniff');
@@ -22,6 +23,8 @@ function dev_status() {
     $out = ['ok' => true, 'unlocked' => membership_dev_unlocked()];
     $out['settings'] = membership_settings_read();
     $out['sync'] = membership_sync_public();
+    $to = membership_mail_recipient();
+    $out['mail'] = ['smtp' => (is_array($SMTP ?? null) && !empty($SMTP['host'])), 'to' => substr($to, 0, 1) . '***' . substr($to, (int)strrpos($to, '@'))];
     if (!$out['unlocked']) return $out;
     $members = membership_read_json(membership_members_file(), []);
     $snapDir = membership_data_dir('snapshots');
@@ -94,6 +97,19 @@ if ($action === 'change_site_password') {
     // Every other browser is signed out; keep this one signed in.
     $_SESSION['membership_auth_version'] = (int)($saved['siteVersion'] ?? 0);
     dev_out(200, array_merge(dev_status(), ['message' => 'Website login password changed. Everyone else has been signed out.']));
+}
+
+if ($action === 'test_email') {
+    // Sends one test message to the recovery mailbox so the SMTP settings in secrets.php can be checked without
+    // pressing a "Forgot password" button. At most one every 30 seconds.
+    $logFile = membership_data_dir() . '/test-email-log.json';
+    $last = (int)(membership_read_json($logFile, [])['lastAt'] ?? 0);
+    if (time() - $last < 30) dev_out(429, ['ok' => false, 'error' => 'Please wait a few seconds between test emails.']);
+    membership_write_json($logFile, ['lastAt' => time()]);
+    $sent = membership_send_mail(membership_mail_recipient(), 'ETCC Membership Manager — test email',
+        "This is a test message from the ETCC Membership Manager Developer menu.\n\nIf you can read it, emailed password-recovery links will reach this mailbox.\n");
+    if ($sent !== true) dev_out(502, ['ok' => false, 'error' => 'The test email could not be sent: ' . $sent]);
+    dev_out(200, array_merge(dev_status(), ['message' => 'Test email sent. Check the recovery mailbox (and its spam folder).']));
 }
 
 if ($action === 'sync_token_generate') {

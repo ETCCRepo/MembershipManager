@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (night, 19) — recovery email setup tooling
+- Owner asked to set up SMTP so emailed recovery links work. SMTP credentials must come from the owner (never pasted into chat): added a **Developer -> Recovery email** panel (shows whether SMTP is configured and the recipient, partly masked; **Send test email** via `developer.php` action `test_email`, 30 s throttle), an empty `$RECOVERY_EMAIL` / `$SMTP` block appended to the LOCAL `App/deploy/secrets.php` (placeholders only), and README 'Setting up recovery email' (Hostinger mailbox recommended, or Gmail app password). **Still to do (owner):** fill in the block, upload `secrets.php` by FTP, press Send test email. Until then emailed links cannot be sent (the FTP trigger method works). Deployed.
+
 ### 2026-10-19 (night, 18) — a 'forgot password' option for each password
 - Owner request. Login page: **Forgot password?** -> `recover.php?for=site`; Developer unlock form: **Forgot the developer password?** -> `recover.php?for=dev`. `recover.php` now resets only the chosen password (scope site / dev / both): per-scope email cooldown and recorded token scope (`membership_recovery_*` in `lib.php`), per-scope FTP trigger files `data/RESET-SITE-PASSWORD`, `data/RESET-DEV-PASSWORD`, `data/RESET-PASSWORDS`, wording and confirm button per scope; only a site reset signs other browsers out. Emailed links still need the `$SMTP` block in the server's `secrets.php` (not yet configured; the FTP method works without it). Not exercised end to end (pressing the email button emails the club mailbox). Deployed.
 
