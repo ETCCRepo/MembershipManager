@@ -50,8 +50,8 @@
   // preset: "1m" "3m" "6m" "12m" "60m" "all" "custom"
   // mode: "rolling" (ends today) | "calendar" (last completed whole months)
   function period(preset, today, mode, custom) {
-    var months = { "1m": 1, "3m": 3, "6m": 6, "12m": 12, "60m": 60 }[preset];
-    var names = { "1m": "month", "3m": "3 months", "6m": "6 months", "12m": "year", "60m": "5 years" };
+    var months = { "1m": 1, "3m": 3, "6m": 6, "12m": 12, "24m": 24, "60m": 60, "120m": 120 }[preset];
+    var names = { "1m": "month", "3m": "3 months", "6m": "6 months", "12m": "year", "24m": "2 years", "60m": "5 years", "120m": "10 years" };
     var p = { preset: preset, today: today, mode: mode, start: "", end: "", label: "", kind: "" };
     if (preset === "all") {
       p.start = CLUB_FOUNDED; p.end = today; p.kind = "all"; p.label = "All records since 1958";
@@ -170,6 +170,30 @@
       out.push({ key: String(y), label: String(y), count: list.length, members: list });
     }
     return out;
+  }
+
+  // Time buckets of new members across [start, end]: "week" (7-day steps from `start`),
+  // "month" or "year". For years, leading empty years are dropped so a "since 1958" chart
+  // starts at the first join instead of showing decades of nothing.
+  function bucketsNew(members, start, end, suspect, gran) {
+    if (gran === "month") return monthlyNew(members, start, end, suspect);
+    if (gran === "year") {
+      var ys = yearlyNew(members, start, end, suspect), i = 0;
+      while (i < ys.length - 1 && !ys[i].count) i++;
+      return ys.slice(i);
+    }
+    var nm = newMembers(members, start, end, suspect).members, out = [], ws = start;
+    while (ws <= end) {
+      var we = addDays(ws, 6); if (we > end) we = end;
+      var list = nm.filter(function (m) { return m.joinDate >= ws && m.joinDate <= we; }), p = parts(ws);
+      out.push({ key: ws, label: MONTH_NAMES[p.m - 1].slice(0, 3) + " " + p.d, count: list.length, members: list });
+      ws = addDays(we, 1);
+    }
+    return out;
+  }
+  // Bar width that keeps a chart readable: weeks for a month, years for 5+ years, else months.
+  function granularityFor(preset) {
+    return preset === "1m" ? "week" : (preset === "60m" || preset === "120m" || preset === "all") ? "year" : "month";
   }
 
   // ---- distributions ------------------------------------------------------------
@@ -388,6 +412,7 @@
     householdBreakdown: householdBreakdown, householdsMonthly: householdsMonthly,
     firstTuesday: firstTuesday, rangeLabel: rangeLabel, meetingPeriodEndingIn: meetingPeriodEndingIn, meetingPeriodAfter: meetingPeriodAfter,
     meetingPeriods: meetingPeriods, anniversariesInRange: anniversariesInRange, expiringInRange: expiringInRange,
+    bucketsNew: bucketsNew, granularityFor: granularityFor,
     snapshotSeries: snapshotSeries, snapshotChanges: snapshotChanges, bucketMembers: bucketMembers
   };
   if (typeof module === "object" && module.exports) module.exports = api;

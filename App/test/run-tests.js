@@ -301,6 +301,33 @@ test("new households by month sum to the households among the new members (chart
   eq(months.reduce(function (a, m) { return a + m.people; }, 0), nm.length);
 });
 
+console.log("Chart-page periods and buckets");
+test("2-year and 10-year rolling periods", function () {
+  var p2 = R.period("24m", TODAY, "rolling"), p10 = R.period("120m", TODAY, "rolling");
+  eq([p2.start, p2.end, p2.label], ["2024-10-20", "2026-10-19", "Last 2 years (rolling)"]);
+  eq([p10.start, p10.label], ["2016-10-20", "Last 10 years (rolling)"]);
+});
+test("bar width: weeks for a month, months up to 2 years, years beyond", function () {
+  eq(["1m", "3m", "6m", "12m", "24m", "60m", "120m", "all"].map(R.granularityFor), ["week", "month", "month", "month", "month", "year", "year", "year"]);
+});
+test("every bucket size sums to the period total (chart = table), including weeks and years", function () {
+  ["1m", "3m", "12m", "24m", "60m", "120m", "all"].forEach(function (k) {
+    var p = R.period(k, TODAY, "rolling"), g = R.granularityFor(k);
+    var b = R.bucketsNew(peoplePool, p.start, p.end, suspect, g);
+    eq(b.reduce(function (a, x) { return a + x.count; }, 0), R.newMembers(peoplePool, p.start, p.end, suspect).members.length, k);
+    eq(b.every(function (x) { return x.members.length === x.count; }), true);
+  });
+});
+test("weekly buckets cover the range with no gaps; years drop leading empty years", function () {
+  var p = R.period("1m", TODAY, "rolling"), w = R.bucketsNew(peoplePool, p.start, p.end, suspect, "week");
+  eq(w[0].key, p.start);
+  eq(w.length, 5);
+  var y = R.bucketsNew(peoplePool, "1958-01-01", TODAY, suspect, "year");
+  eq(y[0].label, "1958"); // the fixture has a real 1958 join
+  var none = R.bucketsNew([{ joinDate: "2020-05-05", membershipType: "Single" }], "1958-01-01", TODAY, {}, "year");
+  eq(none[0].label, "2020");
+});
+
 console.log("Monthly meeting periods (Wednesday after the first Tuesday through the next first Tuesday)");
 test("first Tuesday of a month, including months starting on a Tuesday and year boundaries", function () {
   eq(R.firstTuesday(2026, 10), "2026-10-06");

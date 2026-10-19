@@ -66,6 +66,7 @@ var html =
 '</div>\n' +
 '<div id="detailHost"></div>\n' +
 '<div id="listHost"></div>\n' +
+'<div id="chartPageHost"></div>\n' +
 '<footer class="app-footer">\n' +
 '  <div class="footer-credit">v' + versionString + ' &middot; Built ' + fmtDateTime(builtAt) +
 ' &middot; Website by <a href="https://businesswebexpress.com" target="_blank" rel="noopener">Business Web Express</a>' +

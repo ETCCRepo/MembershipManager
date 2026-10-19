@@ -178,6 +178,16 @@ filtered tables. "Total" rows stay at the bottom and are re-summed for the rows 
 directory, every report's supporting table, the Monthly Meeting tables, the click-through member lists and the import
 history. Code: `tkFillHeader` / `tkEnhance` in `App/src/app.js`. Exports (CSV) always contain the full table.
 
+## Full-page charts (dashboard)
+
+The dashboard cards **New members by month**, **Households by membership type** and **New households by month** are
+clickable (⤢ full page). The full page has a **Period** picker — Last month, 3 months, 6 months, 1 year, 2 years,
+5 years, 10 years, Since 1958 (rolling periods ending today, America/New_York) — plus CSV export, Print and a supporting
+table that shows both members and households. Bars are weekly for a month, monthly up to 2 years, yearly for 5+ years and
+since 1958 (leading empty years are skipped). Clicking a bar or table row lists the members behind it. *Households by
+membership type* covers current active members who joined in the period; **Since 1958** is every current active member
+(including those with bulk-load or missing join dates). Bulk-load join dates are left out of the new-member charts.
+
 ## Monthly Meeting tab
 
 For the club's monthly meeting. A **meeting month** starts the **Wednesday after a month's first Tuesday** and ends

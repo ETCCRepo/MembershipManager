@@ -25,7 +25,7 @@
     report: "new",
     search: "", sortKey: "lastName", sortDir: "asc",
     detailMember: null, list: null, menuOpen: false,
-    imp: null,
+    imp: null, chartPage: null,
     meetingEnd: null, meetingOpts: { joined: true, summary: true, renewals: true, anniversaries: true },
     dev: { loading: false, unlocked: false, system: null, message: "", error: "" }
   };
@@ -143,6 +143,7 @@
     app.appendChild(view);
     renderListModal();
     renderDetailModal();
+    renderChartPage();
   }
   function buildTabs() {
     var tabs = [["dashboard", "Dashboard"], ["reports", "Reports"], ["meeting", "Monthly Meeting"], ["members", "Members"], ["import", "Import"]];
@@ -306,8 +307,15 @@
     }
     return d;
   }
-  function chartPanel(title, node, help) {
-    return el("div", { class: "panel chart-panel" }, [el("h3", { text: title }), help ? el("div", { class: "hint", text: help }) : null, node]);
+  function chartPanel(title, node, help, onOpen) {
+    var card = el("div", { class: "panel chart-panel" + (onOpen ? " openable" : ""), title: onOpen ? "Click for the full-page view" : null, tabindex: onOpen ? "0" : null }, [
+      el("h3", {}, [title, onOpen ? el("span", { class: "open-hint no-print", text: "⤢ full page" }) : null]), help ? el("div", { class: "hint", text: help }) : null, node]);
+    if (onOpen) {
+      // Clicking a bar still lists its members; clicking anywhere else on the card opens the full page.
+      card.addEventListener("click", function (e) { if (e.target.closest && e.target.closest('[role="button"]')) return; onOpen(); });
+      card.addEventListener("keydown", function (e) { if (e.target === card && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onOpen(); } });
+    }
+    return card;
   }
 
   function buildDashboardView() {
@@ -346,12 +354,12 @@
     var charts = el("div", { class: "chart-grid" });
     charts.appendChild(chartPanel("New members by month (last 12 months)", C.bar(months, {
       ariaLabel: "New members by month", onSelect: function (d) { openList("New members — " + d.label, d.members); }
-    }), "Click a bar to see who joined. Bulk-load join dates are left out."));
+    }), "Click a bar to see who joined. Bulk-load join dates are left out.", function () { openChartPage("new"); }));
     var byStatus = R.distribution(pool, function (m) { return m.status; });
     var hByType = R.householdsByType(hpAct);
-    charts.appendChild(chartPanel("Households by membership type", C.bar(hByType, { ariaLabel: "Households by membership type", onSelect: function (d) { openList("Households: " + d.label, d.members); } }), "Households = single members + couple members ÷ 2."));
+    charts.appendChild(chartPanel("Households by membership type", C.bar(hByType, { ariaLabel: "Households by membership type", onSelect: function (d) { openList("Households: " + d.label, d.members); } }), "Households = single members + couple members ÷ 2.", function () { openChartPage("htype"); }));
     var hMonths = R.householdsMonthly(peoplePoolFiltered(), p12.start, p12.end, suspect);
-    charts.appendChild(chartPanel("New households by month (last 12 months)", C.bar(hMonths, { ariaLabel: "New households by month", onSelect: function (d) { openList("New members — " + d.label, d.members); } }), "Each couple member counts as half a household."));
+    charts.appendChild(chartPanel("New households by month (last 12 months)", C.bar(hMonths, { ariaLabel: "New households by month", onSelect: function (d) { openList("New members — " + d.label, d.members); } }), "Each couple member counts as half a household.", function () { openChartPage("hnew"); }));
     charts.appendChild(chartPanel("Membership status", C.donut(byStatus, { ariaLabel: "Status", centerLabel: uw(2), onSelect: function (d) { openList("Status: " + d.label, d.members); } })));
     var byType = R.distribution(pool, function (m) { return m.membershipType; });
     charts.appendChild(chartPanel("Membership type", C.donut(byType, { ariaLabel: "Membership type", centerLabel: uw(2), onSelect: function (d) { openList("Type: " + d.label, d.members); } })));
@@ -1025,6 +1033,86 @@
     return panel;
   }
 
+  // ---------- Full-page chart view (opened from a dashboard chart card) ----------
+  var CHART_PRESETS = [["1m", "Last month"], ["3m", "Last 3 months"], ["6m", "Last 6 months"], ["12m", "Last year"], ["24m", "Last 2 years"], ["60m", "Last 5 years"], ["120m", "Last 10 years"], ["all", "Since 1958"]];
+  function openChartPage(kind) {
+    state.chartPage = { kind: kind, preset: (state.chartPage && state.chartPage.preset) || "12m" };
+    renderChartPage();
+  }
+  function closeChartPage() { state.chartPage = null; renderChartPage(); }
+  function renderChartPage() {
+    var host = $("#chartPageHost");
+    if (!host) return;
+    host.innerHTML = "";
+    document.body.classList.toggle("report-open", !!state.chartPage);
+    var cp = state.chartPage;
+    if (!cp) return;
+    var t = today(), p = R.period(cp.preset, t, "rolling"), suspect = R.suspectJoinDates(state.members);
+    var pool = peoplePoolFiltered(), isAll = cp.preset === "all", gran = R.granularityFor(cp.preset);
+    var granWord = { week: "week", month: "month", year: "year" }[gran];
+    var title, chart, header, rows, members, intro;
+
+    if (cp.kind === "htype") {
+      // Households by membership type among current active members who joined in the period.
+      // "Since 1958" is every current active member, including those without a usable join date.
+      var act = pool.filter(R.isActive);
+      var inWin = isAll ? act : R.newMembers(act, p.start, p.end, suspect).members;
+      var hb = R.householdBreakdown(inWin), ht = R.householdsByType(inWin);
+      title = "Households by membership type";
+      intro = isAll ? "All current active members (no date filter): " + mmhh(inWin) + " members/households."
+        : "Current active members who joined " + L.formatDate(p.start) + " to " + L.formatDate(p.end) + ": " + mmhh(inWin) + " members/households. Bulk-load join dates are left out.";
+      chart = C.bar(ht, { height: 380, ariaLabel: title, onSelect: function (d) { openList("Households: " + d.label, d.members); } });
+      header = ["Membership type", "Members", "Households", "% of households"];
+      rows = ht.map(function (x) { return [x.label, x.people, x.count, pct(x.count, hb.total)]; }).concat([["Total", inWin.length, hb.total, "100%"]]);
+      members = ht.map(function (x) { return x.members; }).concat([inWin]);
+    } else {
+      var buckets = R.bucketsNew(pool, p.start, p.end, suspect, gran);
+      var nm = R.newMembers(pool, p.start, p.end, suspect);
+      var isH = cp.kind === "hnew";
+      var data = buckets.map(function (b) { return { key: b.key, label: b.label, count: isH ? R.householdTotal(b.members) : b.count, members: b.members }; });
+      title = (isH ? "New households by " : "New members by ") + granWord;
+      intro = mmhh(nm.members) + " members/households joined " + L.formatDate(p.start) + " to " + L.formatDate(p.end) + " (bars by " + granWord + (gran === "week" ? ", each starting on the date shown" : "") + "). " +
+        (nm.excludedBulkDate ? num(nm.excludedBulkDate) + " members with a bulk-load join date are left out. " : "") + (nm.undated ? num(nm.undated) + " have no join date. " : "") +
+        (isH ? "Each couple member counts as half a household, so a bar can show .5." : "");
+      chart = C.bar(data, { height: 380, ariaLabel: title, onSelect: function (d) { openList("New members — " + d.label, d.members); } });
+      header = [gran === "week" ? "Week starting" : gran === "month" ? "Month" : "Year", "Members", "Households", "Cumulative " + (isH ? "households" : "members")];
+      var cum = 0;
+      rows = buckets.map(function (b) { cum += isH ? R.householdTotal(b.members) : b.count; return [b.label, b.count, R.householdTotal(b.members), cum]; });
+      rows.push(["Total", nm.members.length, R.householdTotal(nm.members), ""]);
+      members = buckets.map(function (b) { return b.members; }); members.push(nm.members);
+    }
+
+    var back = el("button", { class: "btn" }, ["← Back"]);
+    back.addEventListener("click", closeChartPage);
+    var presetSel = select("Period", CHART_PRESETS, cp.preset, function (v) { cp.preset = v; renderChartPage(); });
+    var pr = el("button", { class: "btn" }, ["🖨 Print"]);
+    pr.addEventListener("click", function () { window.print(); });
+    var exp = el("button", { class: "btn" }, ["⬇ CSV"]);
+    exp.addEventListener("click", function () {
+      var out = [[title], [p.label + " (" + p.start + " to " + p.end + "), " + R.TZ], [], header].concat(rows);
+      download("chart-" + cp.kind + "-" + cp.preset + ".csv", out.map(function (r) { return r.map(I.csvCell).join(","); }).join("\r\n") + "\r\n");
+    });
+    var head = el("div", { class: "api-page-head no-print" }, [el("div", { class: "left" }, [back]), el("h2", { text: title }), el("div", { class: "right" }, [presetSel, exp, pr])]);
+
+    var table = el("table", { class: "grid static" }, [
+      el("thead", {}, [el("tr", {}, header.map(function (h, i) { return el("th", { text: h, class: i ? "num" : "" }); }))]),
+      el("tbody", {}, rows.map(function (r, i) {
+        var tr = el("tr", { class: String(r[0]) === "Total" ? "cc-total" : "" }, r.map(function (c, ci) { return el("td", { text: String(c), class: ci ? "num" : "" }); }));
+        if (members[i] && members[i].length) { tr.classList.add("click"); tr.addEventListener("click", function () { openList(title + " — " + r[0], members[i]); }); }
+        return tr;
+      }))
+    ]);
+    tkEnhance(table, "chartpage:" + cp.kind + ":" + cp.preset);
+    var body = el("div", { class: "api-page-inner wide" }, [
+      el("div", { class: "report-head" }, [el("h2", { text: title }), el("div", { class: "count", text: p.label + " · " + R.TZ + " · as of " + L.formatDate(t) })]),
+      el("div", { class: "panel explain" }, [intro]),
+      el("div", { class: "panel chart-panel" }, [chart]),
+      el("div", { class: "panel" }, [el("h3", { text: "Supporting table" }), el("div", { class: "tablewrap" }, [table]),
+        el("div", { class: "hint", text: "Click a row or bar for the members behind it. Cards and tables show members/households; households = single members + couple members ÷ 2." })])
+    ]);
+    host.appendChild(el("div", { class: "api-page", role: "dialog", "aria-modal": "true", "aria-label": title }, [head, el("div", { class: "api-page-body" }, [body])]));
+  }
+
   // ---------- Developer (password protected) ----------
   // Passwords are typed into password fields, sent once over HTTPS to
   // developer.php, and never kept in `state`. The server stores only hashes.
@@ -1153,6 +1241,7 @@
     if (e.key !== "Escape") return;
     if (state.detailMember) { state.detailMember = null; renderDetailModal(); }
     else if (state.list) { state.list = null; renderListModal(); }
+    else if (state.chartPage) { closeChartPage(); }
   });
 
   function init() {
