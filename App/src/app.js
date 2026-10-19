@@ -26,6 +26,7 @@
     search: "", sortKey: "lastName", sortDir: "asc",
     detailMember: null, list: null, menuOpen: false,
     imp: null,
+    meetingEnd: null, meetingOpts: { joined: true, summary: true, renewals: true, anniversaries: true },
     dev: { loading: false, unlocked: false, system: null, message: "", error: "" }
   };
 
@@ -134,13 +135,13 @@
     app.innerHTML = "";
     app.appendChild(buildTabs());
     var view = state.tab === "reports" ? buildReportsView() : state.tab === "members" ? buildMembersView() :
-      state.tab === "import" ? buildImportView() : state.tab === "developer" ? buildDeveloperView() : buildDashboardView();
+      state.tab === "import" ? buildImportView() : state.tab === "developer" ? buildDeveloperView() : state.tab === "meeting" ? buildMeetingView() : buildDashboardView();
     app.appendChild(view);
     renderListModal();
     renderDetailModal();
   }
   function buildTabs() {
-    var tabs = [["dashboard", "Dashboard"], ["reports", "Reports"], ["members", "Members"], ["import", "Import"]];
+    var tabs = [["dashboard", "Dashboard"], ["reports", "Reports"], ["meeting", "Monthly Meeting"], ["members", "Members"], ["import", "Import"]];
     return el("div", { class: "tabs no-print", role: "tablist" }, tabs.map(function (t) {
       var d = el("div", { class: "tab" + (state.tab === t[0] ? " active" : ""), text: t[1], role: "tab", tabindex: "0" });
       d.addEventListener("click", function () { selectTab(t[0]); });
@@ -547,7 +548,7 @@
       if (list && list.length) {
         tr.className = "click";
         tr.setAttribute("title", "Click to list these members");
-        tr.addEventListener("click", function () { openList(s.title + " — " + r[0], list); });
+        tr.addEventListener("click", function () { if (s.detail) { state.detailMember = list[0]; renderDetailModal(); } else openList(s.title + " — " + r[0], list); });
       }
       tbody.appendChild(tr);
     });
@@ -599,6 +600,102 @@
     exp.addEventListener("click", function () { var t = memberRows(shown); download("members.csv", I.toCsv(t.header, t.rows)); });
     renderBody();
     view.appendChild(el("div", { class: "tablewrap" }, [table]));
+    return view;
+  }
+
+  // ---------- Monthly Meeting ----------
+  // A meeting month runs from the Wednesday after one month's first Tuesday through
+  // (and including) the next month's first Tuesday, the meeting day.
+  function buildMeetingView() {
+    var view = el("div", { class: "view meeting-view" });
+    if (!state.members.length) { view.appendChild(emptyRosterState()); return view; }
+    var t = today(), periods = R.meetingPeriods(t, 24), suspect = R.suspectJoinDates(state.members);
+    var lastDone = periods.filter(function (p) { return p.completed; })[0];
+    var sel = periods.filter(function (p) { return p.end === state.meetingEnd; })[0] || lastDone;
+    var prev = periods[periods.indexOf(sel) + 1] || null, nxt = R.meetingPeriodAfter(sel.end);
+    var effEnd = sel.completed ? sel.end : t; // a month still in progress counts through today
+    var pool = R.pool(state.members, {}), active = pool.filter(R.isActive);
+    var o = state.meetingOpts;
+    var isLast = sel === lastDone;
+    var joinedTitle = isLast ? "Members who joined last month" : sel.inProgress ? "Members who joined this month so far" : "Members who joined that month";
+
+    function optLabel(p) {
+      var meet = "meeting " + L.formatDate(p.end);
+      if (p.inProgress) return "This month so far - " + p.label + " (" + meet + ")";
+      if (p === lastDone) return "Last month - " + p.label + " (" + meet + ")";
+      return "Meeting " + L.formatDate(p.end) + " - " + p.label;
+    }
+    var picker = select("Meeting month", periods.map(function (p) { return [p.end, optLabel(p)]; }), sel.end, function (v) { state.meetingEnd = v; renderViews(); });
+    var optBar = el("div", { class: "toolbar no-print opts" }, [picker]);
+    [["joined", joinedTitle], ["summary", "Summary counts"], ["renewals", "Expirations"], ["anniversaries", "Anniversaries next month"]].forEach(function (x) {
+      var cb = el("input", { type: "checkbox" });
+      cb.checked = !!o[x[0]];
+      cb.addEventListener("change", function () { o[x[0]] = cb.checked; renderViews(); });
+      optBar.appendChild(el("label", { class: "ctl" }, [cb, " " + x[1]]));
+    });
+    view.appendChild(optBar);
+
+    var nm = R.newMembers(pool, sel.start, effEnd, suspect);
+    var joined = nm.members.slice().sort(function (a, b) { return a.joinDate < b.joinDate ? -1 : a.joinDate > b.joinDate ? 1 : memberLine(a).localeCompare(memberLine(b)); });
+    var area = el("div", { class: "report-area" });
+    area.appendChild(el("div", { class: "report-head" }, [el("h2", { text: "Monthly Meeting" }),
+      el("div", { class: "count", text: (isLast ? "Last month: " : sel.inProgress ? "This month so far: " : "Meeting month: ") + L.formatDate(sel.start) + " to " + L.formatDate(sel.end) + " · meeting " + L.formatDate(sel.end) + " · " + R.TZ })]));
+    area.appendChild(el("div", { class: "panel explain" }, [el("strong", { text: "How the month is counted. " }),
+      "A meeting month starts the Wednesday after a month's first Tuesday and ends on the next month's first Tuesday, both days included. " +
+      (sel.inProgress ? "This month is still in progress, so numbers run through today (" + L.formatDate(t) + "); it ends on " + L.formatDate(sel.end) + ". " : "") +
+      "Counts are for the current roster; role accounts are excluded and bulk-load join dates are left out of new-member counts."]));
+
+    if (o.summary) {
+      var prevNm = prev ? R.newMembers(pool, prev.start, prev.end, suspect).members : null;
+      var cmp = prevNm ? R.compare(joined.length, prevNm.length) : null;
+      var hAct = R.householdBreakdown(active), hNew = R.householdTotal(joined);
+      var expNext = R.expiringInRange(active, nxt.start, nxt.end, t);
+      var grid = el("div", { class: "kpi-grid" });
+      grid.appendChild(kpi("Active members", num(active.length), "people today", function () { openList("Active members", active); }));
+      grid.appendChild(kpi("Households", num(hAct.total), num(hAct.singleHouseholds) + " single + " + num(hAct.couples.length) + " couple members ÷ 2", function () { openList("Active households (members)", active); }));
+      grid.appendChild(kpi("New members", num(joined.length), L.formatDate(sel.start) + " to " + L.formatDate(effEnd), function () { openList(joinedTitle, joined); }));
+      grid.appendChild(kpi("New households", num(hNew), "singles + couple members ÷ 2"));
+      if (cmp) grid.appendChild(kpi("Vs previous month", cmp.abs >= 0 ? "+" + num(cmp.abs) : num(cmp.abs), prevNm.length + " new members in " + L.formatDate(prev.start) + " to " + L.formatDate(prev.end) + (cmp.pct == null ? "" : " (" + (cmp.abs >= 0 ? "+" : "") + Math.round(cmp.pct * 10) / 10 + "%)"), function () { openList("New members in previous month", prevNm); }));
+      grid.appendChild(kpi("Expiring next month", num(expNext.length), L.formatDate(nxt.start) + " to " + L.formatDate(nxt.end), function () { openList("Expiring " + nxt.label, expNext); }));
+      area.appendChild(grid);
+    }
+
+    var sections = [];
+    if (o.joined) {
+      sections.push({ title: joinedTitle + " (" + joined.length + ")", detail: true,
+        header: ["Joined", "Name", "Member #", "Membership type", "Spouse", "City", "State"],
+        rows: joined.map(function (m) { return [L.formatDate(m.joinDate), memberLine(m), m.memberNumber || "", m.membershipType || "", m.spouseFirstName || "", m.city || "", m.state || ""]; }),
+        members: joined.map(function (m) { return [m]; }),
+        note: (nm.excludedBulkDate ? num(nm.excludedBulkDate) + " member(s) with a bulk-load join date in this range are not listed. " : "") + (nm.undated ? num(nm.undated) + " member(s) have no join date and cannot be placed in a month. " : "") + "Click a row for the member's details." });
+    }
+    if (o.renewals) {
+      var expNext2 = R.expiringInRange(active, nxt.start, nxt.end, t), expThis = R.expiringInRange(pool, sel.start, effEnd, t);
+      function expRows(list) { return list.map(function (m) { return [L.formatDate(m.expirationDate), memberLine(m), m.memberNumber || "", m.membershipType || "", m.status || ""]; }); }
+      sections.push({ title: "Memberships expiring next month (" + nxt.label + ") (" + expNext2.length + ")", detail: true, header: ["Expires", "Name", "Member #", "Membership type", "Status"], rows: expRows(expNext2), members: expNext2.map(function (m) { return [m]; }),
+        note: "Expiration dates in the next meeting month, for active members." });
+      sections.push({ title: "Expiration dates that fell in this meeting month (" + expThis.length + ")", detail: true, header: ["Expired", "Name", "Member #", "Membership type", "Status"], rows: expRows(expThis), members: expThis.map(function (m) { return [m]; }),
+        note: "Anyone listed with status Active whose date has passed still needs to renew or be updated in ClubExpress." });
+    }
+    if (o.anniversaries) {
+      var an = R.anniversariesInRange(pool, nxt.start, nxt.end, suspect);
+      sections.push({ title: "Membership anniversaries next month (" + nxt.label + ") (" + an.length + ")", detail: true, header: ["Date", "Name", "Years"], rows: an.map(function (a) { return [L.formatDate(a.date), memberLine(a.member), a.years]; }), members: an.map(function (a) { return [a.member]; }),
+        note: "Only trustworthy join dates are used; bulk-load and missing dates are skipped." });
+    }
+    sections.forEach(function (s) { area.appendChild(renderSection(s)); });
+    if (!o.joined && !o.summary && !o.renewals && !o.anniversaries) area.appendChild(el("div", { class: "empty-state", text: "Tick at least one item above." }));
+    view.appendChild(area);
+
+    var actions = el("div", { class: "toolbar no-print" });
+    var exp = el("button", { class: "btn" }, ["⬇ Export meeting CSV"]);
+    exp.addEventListener("click", function () {
+      var out = [["Monthly Meeting"], [sel.start + " to " + effEnd + " (meeting " + sel.end + "), " + R.TZ]];
+      sections.forEach(function (s) { out.push([]); out.push([s.title]); out.push(s.header); s.rows.forEach(function (r) { out.push(r); }); });
+      download("monthly-meeting-" + sel.end + ".csv", out.map(function (r) { return r.map(I.csvCell).join(","); }).join("\r\n") + "\r\n");
+    });
+    var pr = el("button", { class: "btn" }, ["🖨 Print"]);
+    pr.addEventListener("click", function () { window.print(); });
+    actions.appendChild(exp); actions.appendChild(pr);
+    view.appendChild(actions);
     return view;
   }
 
@@ -876,7 +973,7 @@
 
   function init() {
     var h = (location.hash || "").replace("#", "");
-    if (["dashboard", "reports", "members", "import"].indexOf(h) !== -1) state.tab = h;
+    if (["dashboard", "reports", "meeting", "members", "import"].indexOf(h) !== -1) state.tab = h;
     buildHeaderMenu();
     renderViews();
   }

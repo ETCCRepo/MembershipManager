@@ -168,6 +168,18 @@ number and chart; each report states which it is using.
 - Nothing is sent to third parties; the page loads no external scripts, fonts or images.
 
 
+
+## Monthly Meeting tab
+
+For the club's monthly meeting. A **meeting month** starts the **Wednesday after a month's first Tuesday** and ends
+on the **next month's first Tuesday** (both days included; America/New_York) — e.g. Sep 2 – Oct 6, 2026, meeting Oct 6.
+"Last month" is the latest period whose meeting day has arrived (on the meeting day itself that period is already
+"last month"); the picker also offers "This month so far" (counts run through today) and the previous two years.
+Tick which items to collect: **members who joined** (default: last month), summary counts (active members, households,
+new members and households, change vs the previous month, expiring next month), **expirations** (next month, and those
+that fell in the chosen month) and **anniversaries next month**. Export CSV and Print cover exactly what is ticked. Join
+dates that are bulk-load dates are left out, as everywhere else.
+
 ## Developer menu and passwords
 
 The hamburger menu has a **Developer** item protected by its own password (initial value supplied by the

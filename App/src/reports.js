@@ -294,6 +294,65 @@
     });
   }
 
+  // ---- monthly meeting periods ----------------------------------------------------
+  // A meeting "month" starts the Wednesday after a calendar month's first Tuesday
+  // and ends (inclusive) on the NEXT month's first Tuesday — the meeting day.
+  function firstTuesday(y, m) {
+    var dow = new Date(Date.UTC(y, m - 1, 1)).getUTCDay(); // 0 = Sunday, 2 = Tuesday
+    return ymd(y, m, 1 + (2 - dow + 7) % 7);
+  }
+  function shiftMonth(y, m, n) { var idx = y * 12 + (m - 1) + n; return { y: Math.floor(idx / 12), m: idx % 12 + 1 }; }
+  function rangeLabel(start, end) {
+    var a = parts(start), b = parts(end), mo = function (p) { return MONTH_NAMES[p.m - 1].slice(0, 3); };
+    return mo(a) + " " + a.d + (a.y !== b.y ? ", " + a.y : "") + " - " + mo(b) + " " + b.d + ", " + b.y;
+  }
+  // The period that ends on the first Tuesday of (y, m).
+  function meetingPeriodEndingIn(y, m) {
+    var prev = shiftMonth(y, m, -1), end = firstTuesday(y, m), start = addDays(firstTuesday(prev.y, prev.m), 1);
+    return { start: start, end: end, label: rangeLabel(start, end) };
+  }
+  // The period immediately after the one ending on `end` (a first Tuesday).
+  function meetingPeriodAfter(end) {
+    var p = parts(end), nx = shiftMonth(p.y, p.m, 1), e = firstTuesday(nx.y, nx.m), st = addDays(end, 1);
+    return { start: st, end: e, label: rangeLabel(st, e) };
+  }
+  // Newest first: [0] is the period in progress (ends on the next first Tuesday
+  // after today); [1] is "last month", the latest period whose meeting day is today
+  // or earlier. `completed` is true once the meeting day has arrived.
+  function meetingPeriods(today, count) {
+    var t = parts(today), list = [];
+    for (var i = -1; i < count + 2; i++) {
+      var sm = shiftMonth(t.y, t.m, 1 - (i + 1)); // month whose first Tuesday ends this period
+      var per = meetingPeriodEndingIn(sm.y, sm.m);
+      per.completed = per.end <= today;
+      list.push(per);
+    }
+    var firstDone = 0;
+    while (firstDone < list.length && !list[firstDone].completed) firstDone++;
+    var out = list.slice(Math.max(0, firstDone - 1), Math.max(0, firstDone - 1) + count + 1);
+    out.forEach(function (p) { p.inProgress = !p.completed; });
+    return out;
+  }
+  // Join anniversaries (reliable join dates, 1+ years) that fall inside [start, end].
+  function anniversariesInRange(members, start, end, suspect) {
+    var out = [], y0 = +start.slice(0, 4), y1 = +end.slice(0, 4);
+    members.forEach(function (m) {
+      if (!reliableJoin(m, suspect)) return;
+      var j = parts(m.joinDate);
+      for (var y = y0; y <= y1; y++) {
+        var d = j.m === 2 && j.d === 29 && daysInMonth(y, 2) < 29 ? 28 : j.d, date = ymd(y, j.m, d), years = y - j.y;
+        if (date >= start && date <= end && years >= 1) out.push({ member: m, date: date, years: years });
+      }
+    });
+    return out.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+  }
+  // Memberships whose expiration date falls in [start, end] (far-future "no expiry" dates ignored).
+  function expiringInRange(members, start, end, today) {
+    var horizon = addMonths(today, 60);
+    return members.filter(function (m) { return m.expirationDate && m.expirationDate >= start && m.expirationDate <= end && m.expirationDate <= horizon; })
+      .sort(function (a, b) { return a.expirationDate < b.expirationDate ? -1 : a.expirationDate > b.expirationDate ? 1 : 0; });
+  }
+
   // ---- snapshots (the only valid source of totals over time) ----------------------
   // snapshots: [{ id, date, mode:"full"|"partial", keys:[personKeys], households:[...] }]
   function snapshotSeries(snapshots) {
@@ -327,6 +386,8 @@
     upcomingAnniversaries: upcomingAnniversaries, longServing: longServing, dataQuality: dataQuality, householdSizes: householdSizes,
     isCouple: isCouple, householdWeight: householdWeight, householdTotal: householdTotal, householdsByType: householdsByType,
     householdBreakdown: householdBreakdown, householdsMonthly: householdsMonthly,
+    firstTuesday: firstTuesday, rangeLabel: rangeLabel, meetingPeriodEndingIn: meetingPeriodEndingIn, meetingPeriodAfter: meetingPeriodAfter,
+    meetingPeriods: meetingPeriods, anniversariesInRange: anniversariesInRange, expiringInRange: expiringInRange,
     snapshotSeries: snapshotSeries, snapshotChanges: snapshotChanges, bucketMembers: bucketMembers
   };
   if (typeof module === "object" && module.exports) module.exports = api;

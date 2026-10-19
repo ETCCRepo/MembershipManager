@@ -12,7 +12,7 @@ Options -Indexes
 # directly; index.php reads them server-side. app-bundle.html is only ever
 # served through index.php's login gate. secrets.php is PHP (never served as
 # text) but is denied too, as belt-and-suspenders.
-<FilesMatch "(\.json|^app-bundle\.html|^_login\.html|^secrets\.php|^lib\.php)$">
+<FilesMatch "(\.json|^app-bundle\.html|^_login\.html|^secrets\.php|^lib\.php|^mailer\.php)$">
   <IfModule mod_authz_core.c>
     Require all denied
   </IfModule>

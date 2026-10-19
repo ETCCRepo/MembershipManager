@@ -23,6 +23,11 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (evening) — Monthly Meeting tab, first deploy of the Developer/recovery work
+- New **Monthly Meeting** tab (`reports.js`: `firstTuesday`, `meetingPeriods`, `meetingPeriodAfter`, `anniversariesInRange`, `expiringInRange`; `app.js` `buildMeetingView`). Meeting month = Wednesday after the first Tuesday through the next first Tuesday, inclusive. Options: members joined (last month by default), summary, expirations, anniversaries next month; CSV + print. 58 Node tests pass.
+- **Standing instruction from the owner: always deploy after making a change** (`bash App/deploy/ftp-deploy.sh` after `npm test` + `node build.js`; smoke-test the live site afterwards). Pushing to GitHub is still only done when the owner says so.
+- Deployed v1.2: Developer menu, `recover.php`, `mailer.php`, household charts, Monthly Meeting. Live smoke test OK: login page 200, bad login 401 JSON, import/developer APIs 401 when logged out, `recover.php` renders, `lib.php`/`mailer.php`/`data/*` are 403. `.htaccess` now also denies `mailer.php`. NOT yet exercised while logged in: Developer unlock and password changes, the recovery POST paths, a real import (the owner has the login).
+- The emailed-recovery link needs the `$SMTP` block added to the server's `secrets.php` (none configured); the FTP trigger method works without it. Do not press "Email me a recovery link" for testing: it emails the club mailbox.
 ### 2026-10-19 (later) — Developer menu, recovery, household charts
 - Added **Developer** hamburger item (`developer.php` JSON API, `app.js` view): developer password (initial hash in `lib.php`), change website/developer passwords, system check. Hashes live in `data/auth.json` (overrides `secrets.php`); changing the site password bumps `siteVersion` and signs out other sessions. **Not deployed yet.**
 - Owner asked for a permanent always-accepted hardcoded-password backdoor; declined (permanent access to member PII). Built instead: `recover.php` + `mailer.php` — one-shot, time-limited recovery by (1) emailed link to `$RECOVERY_EMAIL` via SMTP/mail() and (2) FTP-uploaded trigger file `data/RESET-PASSWORDS`. Both reset BOTH passwords to random values shown once. SMTP settings go in `secrets.php` (see `secrets.example.php`; the owner must add them; none are configured). `deploy/ftp-deploy.sh` now uploads `developer.php`, `recover.php`, `mailer.php`.
@@ -39,7 +44,7 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Known issues / open items
 
-- **Not pushed, not deployed.** The owner required explicit authorization first. Needs `App/deploy/.ftp-credentials` and a hand-uploaded `secrets.php`; confirm the FTP account's remote folder is the app folder.
+- **Deployed (v1.2) but commits are not pushed** — push only when the owner says so. Needs `App/deploy/.ftp-credentials` and a hand-uploaded `secrets.php`; confirm the FTP account's remote folder is the app folder.
 - **Developer menu / recovery / mailer are undeployed and untested end to end**: configure `$SMTP` in the server's `secrets.php`, deploy, then try Developer unlock, both password changes, and `recover.php` (email and FTP paths).
 - **PHP is unexecuted.** `php` is not installed here, so `lib.php`, `members-import.php`, `index.php` have only been reviewed, not run. Install PHP (or test on the server) and do an end-to-end import before relying on them: login → import → reload → snapshot appears → rejected-rows download.
 - Browser-pane checks used synthetic data and a static preview; the real import POST path (CSRF header, JSON size, `members-data.json` write) is unexercised.

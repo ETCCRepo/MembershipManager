@@ -301,6 +301,55 @@ test("new households by month sum to the households among the new members (chart
   eq(months.reduce(function (a, m) { return a + m.people; }, 0), nm.length);
 });
 
+console.log("Monthly meeting periods (Wednesday after the first Tuesday through the next first Tuesday)");
+test("first Tuesday of a month, including months starting on a Tuesday and year boundaries", function () {
+  eq(R.firstTuesday(2026, 10), "2026-10-06");
+  eq(R.firstTuesday(2026, 9), "2026-09-01"); // the 1st is itself a Tuesday
+  eq(R.firstTuesday(2026, 12), "2026-12-01");
+  eq(R.firstTuesday(2027, 1), "2027-01-05");
+});
+test("a period starts the Wednesday after one first Tuesday and ends on the next", function () {
+  var p = R.meetingPeriodEndingIn(2026, 10);
+  eq([p.start, p.end], ["2026-09-02", "2026-10-06"]);
+  eq(new Date(p.start + "T00:00:00Z").getUTCDay(), 3); // Wednesday
+  eq(new Date(p.end + "T00:00:00Z").getUTCDay(), 2);   // Tuesday
+  var q = R.meetingPeriodEndingIn(2027, 1);
+  eq([q.start, q.end], ["2026-12-02", "2027-01-05"]);
+  eq(R.meetingPeriodAfter("2026-10-06").end, "2026-11-03");
+  eq(R.meetingPeriodAfter("2026-10-06").start, "2026-10-07");
+});
+test("last month = latest period whose meeting day has arrived; in-progress period comes first", function () {
+  var l = R.meetingPeriods("2026-10-19", 4);
+  eq([l[0].start, l[0].end, l[0].inProgress], ["2026-10-07", "2026-11-03", true]);
+  eq([l[1].start, l[1].end, l[1].completed], ["2026-09-02", "2026-10-06", true]);
+  eq(l.length, 5);
+});
+test("on the meeting day the just-ended period is already 'last month'; the day after, the next has begun", function () {
+  eq(R.meetingPeriods("2026-10-06", 2)[1].end, "2026-10-06");
+  eq(R.meetingPeriods("2026-10-06", 2)[0].end, "2026-11-03");
+  eq(R.meetingPeriods("2026-10-07", 2)[0].start, "2026-10-07");
+  eq(R.meetingPeriods("2026-10-05", 2)[0].end, "2026-10-06"); // meeting still ahead
+  eq(R.meetingPeriods("2026-10-05", 2)[1].end, "2026-09-01");
+});
+test("periods tile the calendar with no gaps or overlaps, across a year end", function () {
+  var l = R.meetingPeriods("2027-01-20", 14);
+  for (var i = 0; i < l.length - 1; i++) eq(R.addDays(l[i + 1].end, 1), l[i].start);
+  assert.ok(l.some(function (p) { return p.end === "2027-01-05"; }) && l.some(function (p) { return p.end === "2026-12-01"; }));
+});
+test("members joined: the meeting day ending the period is included, the previous meeting day is not", function () {
+  var p = R.meetingPeriodEndingIn(2026, 10);
+  var ms = [["2026-09-01", "meetingBefore"], ["2026-09-02", "firstDay"], ["2026-10-06", "lastDay"], ["2026-10-07", "nextPeriod"]]
+    .map(function (x) { return { joinDate: x[0], lastName: x[1], membershipType: "Single" }; });
+  eq(R.newMembers(ms, p.start, p.end, {}).members.map(function (m) { return m.lastName; }), ["firstDay", "lastDay"]);
+});
+test("anniversaries and expirations inside a range, across the year end; no-expiry dates ignored", function () {
+  var ms = [{ joinDate: "2020-12-20", lastName: "A" }, { joinDate: "2020-01-03", lastName: "B" }, { joinDate: "2025-12-20", lastName: "C" }, { joinDate: "2026-12-20", lastName: "D" }];
+  var an = R.anniversariesInRange(ms, "2026-12-02", "2027-01-05", {});
+  eq(an.map(function (a) { return a.member.lastName + a.years; }), ["A6", "C1", "B7"]);
+  var ex = R.expiringInRange([{ expirationDate: "2026-11-15", lastName: "x" }, { expirationDate: "2066-01-01", lastName: "role" }, { expirationDate: "2026-12-01", lastName: "y" }], "2026-11-01", "2026-12-31", "2026-10-19");
+  eq(ex.map(function (m) { return m.lastName; }), ["x", "y"]);
+});
+
 console.log("History: snapshots are the only source of totals over time");
 var snaps = [
   { id: "a", date: "2026-01-01", mode: "full", people: 3, households: 2, keys: ["n:1", "n:2", "n:3"] },
