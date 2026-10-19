@@ -1275,7 +1275,7 @@
     // Daily sync: a token for the scheduled task on the club's computer, plus the last run's result.
     var sy = state.dev.sync || state.sync || {};
     var syBox = el("div", { class: "panel pw-form" }, [el("h3", { text: "Data Import" }),
-      el("div", { class: "hint", text: "A task on the club's computer exports the ClubExpress Additional Member Data report once a day, at the time set below, and sends it here. Sync now asks it to run on its next check (about every 5 minutes). It signs in with a sync token, not a password; the server keeps only the token's hash." }),
+      el("div", { class: "hint", text: "A task on the club's computer exports the ClubExpress Additional Member Data report on the schedule set below and sends it here. Sync now asks it to run on its next check (about every 5 minutes). It signs in with a sync token, not a password; the server keeps only the token's hash." }),
       el("div", { text: "Token: " + (sy.tokenSet ? "created " + fmtDateTime(sy.tokenCreatedAt) : "none (automatic data import is off)") }),
       el("div", { text: "Last run: " + (sy.lastRunAt ? fmtDateTime(sy.lastRunAt) + " — " + (sy.ok ? "ok" : "FAILED") + (sy.message ? " (" + sy.message + ")" : "") : "never") })]);
     var syMsg = el("div", { class: "hint", role: "status" });
@@ -1326,20 +1326,37 @@
     syBox.appendChild(el("div", { class: "toolbar" }, btns));
     syBox.appendChild(syMsg);
 
-    // Time of day the sync runs (Eastern time); the club computer's poll task starts it once that time has passed.
-    var tInput = el("input", { type: "time", value: sy.syncTime || "06:30", "aria-label": "Data import time" });
-    var tSave = el("button", { class: "btn", type: "button" }, ["Save time"]);
+    // Import schedule (Eastern time): on/off, daily at a time or hourly, optional start and end dates (blank end = forever).
+    // The club computer's poll task starts a run when the schedule says one is due.
+    var sc = sy.schedule || { enabled: true, frequency: "daily", time: "06:30", start: "", end: "" };
+    var tOn = el("input", { type: "checkbox", "aria-label": "Scheduled import enabled" });
+    tOn.checked = !!sc.enabled;
+    var tFreq = el("select", { "aria-label": "Import frequency" }, [el("option", { value: "daily", text: "Daily at" }), el("option", { value: "hourly", text: "Hourly" })]);
+    tFreq.value = sc.frequency === "hourly" ? "hourly" : "daily";
+    var tInput = el("input", { type: "time", value: sc.time || "06:30", "aria-label": "Data import time" });
+    var tStart = el("input", { type: "date", value: sc.start || "", "aria-label": "Schedule start date (optional)" });
+    var tEnd = el("input", { type: "date", value: sc.end || "", "aria-label": "Schedule end date (optional)" });
+    var tSave = el("button", { class: "btn", type: "button" }, ["Save schedule"]);
     var tMsg = el("div", { class: "hint", role: "status" });
+    function tSync() { tInput.style.display = tFreq.value === "daily" ? "" : "none"; }
+    tFreq.addEventListener("change", tSync); tSync();
     tSave.addEventListener("click", function () {
-      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(tInput.value)) { tMsg.className = "errors"; tMsg.textContent = "Choose a time of day."; return; }
+      if (tFreq.value === "daily" && !/^([01]\d|2[0-3]):[0-5]\d$/.test(tInput.value)) { tMsg.className = "errors"; tMsg.textContent = "Choose a time of day."; return; }
+      if (tStart.value && tEnd.value && tEnd.value < tStart.value) { tMsg.className = "errors"; tMsg.textContent = "The end date must be on or after the start date."; return; }
       tSave.disabled = true; tMsg.className = "hint"; tMsg.textContent = "Saving…";
-      devApi("save_settings", { syncTime: tInput.value }).then(function (j) {
+      var payload = { syncEnabled: tOn.checked, syncFrequency: tFreq.value, syncStart: tStart.value || "", syncEnd: tEnd.value || "" };
+      if (/^([01]\d|2[0-3]):[0-5]\d$/.test(tInput.value)) payload.syncTime = tInput.value;
+      devApi("save_settings", payload).then(function (j) {
         tSave.disabled = false;
         if (j && j.ok) { applyDev(j, true); tMsg.className = "success"; tMsg.textContent = j.message || "Saved."; }
         else { tMsg.className = "errors"; tMsg.textContent = (j && j.error) || "Could not save."; }
       }).catch(function () { tSave.disabled = false; tMsg.className = "errors"; tMsg.textContent = "Could not reach the server. Nothing was changed."; });
     });
-    syBox.appendChild(el("div", { class: "toolbar" }, [el("strong", { text: "Run the sync each day at" }), tInput, el("span", { class: "hint", text: "Eastern time" }), tSave]));
+    syBox.appendChild(el("h4", { text: "Import schedule" }));
+    syBox.appendChild(el("label", { class: "toolbar" }, [tOn, el("strong", { text: "Scheduled import on" }), el("span", { class: "hint", text: sc.enabled ? "" : "— off: only Sync now runs an import" })]));
+    syBox.appendChild(el("div", { class: "toolbar" }, [tFreq, tInput, el("span", { class: "hint", text: "Eastern time" })]));
+    syBox.appendChild(el("div", { class: "toolbar" }, [el("span", { text: "Start date" }), tStart, el("span", { text: "End date" }), tEnd, el("span", { class: "hint", text: "both optional; no end date means forever" })]));
+    syBox.appendChild(el("div", { class: "toolbar" }, [tSave]));
     syBox.appendChild(tMsg);
 
     // Every sync run, newest first.

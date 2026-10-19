@@ -524,7 +524,9 @@ function membership_settings_file() {
 }
 
 function membership_settings_defaults() {
-    return ['renewalStart' => '10-01', 'renewalEnd' => '12-31', 'syncTime' => '06:30'];
+    // sync*: when the automatic data import runs. syncStart/syncEnd are Eastern dates (YYYY-MM-DD); '' = no limit.
+    return ['renewalStart' => '10-01', 'renewalEnd' => '12-31', 'syncEnabled' => true, 'syncFrequency' => 'daily',
+        'syncTime' => '06:30', 'syncStart' => '', 'syncEnd' => ''];
 }
 
 function membership_valid_mmdd($s) {
@@ -535,12 +537,26 @@ function membership_valid_hhmm($s) {
     return is_string($s) && preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $s) === 1;
 }
 
+function membership_valid_ymd($s) {
+    return is_string($s) && preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $s, $m) === 1 && checkdate((int)$m[2], (int)$m[3], (int)$m[1]);
+}
+
+function membership_setting_valid($k, $v) {
+    switch ($k) {
+        case 'syncTime': return membership_valid_hhmm($v);
+        case 'syncEnabled': return is_bool($v);
+        case 'syncFrequency': return $v === 'daily' || $v === 'hourly';
+        case 'syncStart': case 'syncEnd': return $v === '' || membership_valid_ymd($v);
+        default: return membership_valid_mmdd($v);
+    }
+}
+
 function membership_settings_read() {
     $defaults = membership_settings_defaults();
     $stored = membership_read_json(membership_settings_file(), []);
     $out = $defaults;
     foreach ($defaults as $k => $_) {
-        if (isset($stored[$k]) && ($k === 'syncTime' ? membership_valid_hhmm($stored[$k]) : membership_valid_mmdd($stored[$k]))) $out[$k] = $stored[$k];
+        if (isset($stored[$k]) && membership_setting_valid($k, $stored[$k])) $out[$k] = $stored[$k];
     }
     return $out;
 }
@@ -667,7 +683,7 @@ function membership_sync_public() {
         'lastRunAt' => $s['lastRunAt'] ?? null, 'lastSuccessAt' => $s['lastSuccessAt'] ?? null, 'ok' => $s['ok'] ?? null,
         'message' => $s['message'] ?? '', 'changed' => $s['changed'] ?? null,
         'requestedAt' => $s['requestedAt'] ?? null, 'claimedAt' => $s['claimedAt'] ?? null,
-        'syncTime' => membership_settings_read()['syncTime'],
+        'schedule' => membership_sync_schedule(),
     ];
 }
 
@@ -692,15 +708,33 @@ function membership_sync_claim() {
         $cur = membership_read_json($file, []);
         $now = time();
         if (!empty($cur['claimedAt']) && $now - (int)strtotime($cur['claimedAt']) < 1800) return false;
-        $due = (new DateTime('today ' . membership_settings_read()['syncTime'], new DateTimeZone('America/New_York')))->getTimestamp();
         $trigger = false;
         if (!empty($cur['requestedAt'])) $trigger = 'manual';
-        elseif ($now >= $due && (empty($cur['lastRunAt']) || (int)strtotime($cur['lastRunAt']) < $due)) $trigger = 'scheduled';
+        elseif (membership_sync_schedule_due($cur, $now)) $trigger = 'scheduled';
         if ($trigger === false) return false;
         $cur['claimedAt'] = gmdate('c');
         $cur['claimedTrigger'] = $trigger;
         return membership_write_json($file, $cur) ? $trigger : false;
     });
+}
+
+function membership_sync_schedule() {
+    $s = membership_settings_read();
+    return ['enabled' => $s['syncEnabled'], 'frequency' => $s['syncFrequency'], 'time' => $s['syncTime'], 'start' => $s['syncStart'], 'end' => $s['syncEnd']];
+}
+
+// Is a scheduled run due now? Needs the schedule enabled and today (Eastern) inside the optional start/end dates.
+// Daily: today's time has passed and no run has finished since it. Hourly: none finished in the last hour.
+function membership_sync_schedule_due($cur, $now) {
+    $sc = membership_sync_schedule();
+    if (!$sc['enabled']) return false;
+    $today = (new DateTime('@' . $now))->setTimezone(new DateTimeZone('America/New_York'))->format('Y-m-d');
+    if ($sc['start'] !== '' && $today < $sc['start']) return false;
+    if ($sc['end'] !== '' && $today > $sc['end']) return false;
+    $last = empty($cur['lastRunAt']) ? 0 : (int)strtotime($cur['lastRunAt']);
+    if ($sc['frequency'] === 'hourly') return $now - $last >= 3600;
+    $due = (new DateTime('today ' . $sc['time'], new DateTimeZone('America/New_York')))->getTimestamp();
+    return $now >= $due && $last < $due;
 }
 
 // One row per sync run (newest first, last 200), shown in Developer -> Data Import.

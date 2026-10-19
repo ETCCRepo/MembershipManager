@@ -133,9 +133,15 @@ if ($action === 'sync_token_revoke') {
 
 if ($action === 'save_settings') {
     $changes = [];
-    if (isset($body['syncTime'])) {
-        if (!membership_valid_hhmm($body['syncTime'])) dev_out(422, ['ok' => false, 'error' => 'Choose a valid time of day.']);
-        $changes['syncTime'] = $body['syncTime'];
+    $schedKeys = ['syncEnabled', 'syncFrequency', 'syncTime', 'syncStart', 'syncEnd'];
+    foreach ($schedKeys as $k) {
+        if (!array_key_exists($k, $body)) continue;
+        if (!membership_setting_valid($k, $body[$k])) dev_out(422, ['ok' => false, 'error' => 'That import schedule setting is not valid (' . $k . ').']);
+        $changes[$k] = $body[$k];
+    }
+    if (array_intersect_key($changes, array_flip($schedKeys))) {
+        $merged = array_merge(membership_settings_read(), $changes);
+        if ($merged['syncStart'] !== '' && $merged['syncEnd'] !== '' && $merged['syncEnd'] < $merged['syncStart']) dev_out(422, ['ok' => false, 'error' => 'The end date must be on or after the start date.']);
     }
     foreach (['renewalStart', 'renewalEnd'] as $k) {
         if (!isset($body[$k])) continue;
@@ -145,7 +151,7 @@ if ($action === 'save_settings') {
     if (!$changes) dev_out(422, ['ok' => false, 'error' => 'Nothing to save.']);
     $saved = membership_settings_update($changes);
     if (!$saved) dev_out(500, ['ok' => false, 'error' => 'Could not save the settings. Nothing was changed.']);
-    dev_out(200, array_merge(dev_status(), ['message' => isset($changes['syncTime']) ? 'Sync time saved. The club computer runs the sync at that time each day (it checks about every 5 minutes).' : 'Renewal dates saved. Everyone sees them on their next page load.']));
+    dev_out(200, array_merge(dev_status(), ['message' => array_intersect_key($changes, array_flip($schedKeys)) ? 'Import schedule saved. The club computer checks about every 5 minutes and follows it.' : 'Renewal dates saved. Everyone sees them on their next page load.']));
 }
 
 if ($action === 'change_dev_password') {
