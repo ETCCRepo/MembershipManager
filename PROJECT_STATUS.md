@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (late night, 6) — membership + households on one totals chart
+- Owner: rename the totals card to 'membership' and add households to the graph. The dashboard card / full page is now **Total membership over time** (Show: Both draws members and households lines plus exact saved-import dots on one chart; Members or Households draws one line, titled 'Total households over time' for households). Chart-page kind is now `tot`; `totalsNode(td, kind)` accepts members|households|both; the `timeLine` legend wraps onto extra rows. Deployed.
+
 ### 2026-10-19 (late night, 5) — renewal dates in Developer, new version format
 - **Developer → Renewal dates**: renewal start and end (month-day) are stored server-side (`data/settings.json`; `membership_settings_*` in `lib.php`; `save_settings` in `developer.php`; injected into the page via `ingestSettings`). `reports.js` `renewalWindow/renewalTarget/renewalStatus(members, today, cfg)` use them (wrap-around windows supported, invalid values fall back to Oct 1 / Dec 31). This replaces the earlier 'season starts Oct 1' assumption. 71 tests.
 - **Footer version is now `vYYYY.MM.DD.NN`** (date + counter restarting daily; `build.js`, `version.json` = {date, n}). `/ETCCMMCheckpoint` skill updated. Deployed.

@@ -403,8 +403,7 @@
     var byType = distV(pool, function (m) { return m.membershipType; });
     charts.appendChild(chartPanel("Membership type", C.donut(byType, { ariaLabel: "Membership type", centerLabel: viewNoun(), onSelect: function (d) { openList("Type: " + d.label, d.members); } })));
     var actPool = peoplePoolFiltered().filter(R.isActive), tdash = totalsData("12m", actPool);
-    if (state.view !== "households") charts.appendChild(chartPanel("Total members over time (last year)", totalsNode(tdash, "members", 260), "Current members by recorded join date; dots are exact saved-import totals. Click for all periods.", function () { openChartPage("totm"); }));
-    if (state.view !== "members") charts.appendChild(chartPanel("Total households over time (last year)", totalsNode(tdash, "households", 260), "Current households by recorded join date; dots are exact saved-import totals. Click for all periods.", function () { openChartPage("toth"); }));
+    charts.appendChild(chartPanel(state.view === "households" ? "Total households over time (last year)" : "Total membership over time (last year)", totalsNode(tdash, state.view, 260), "Today's " + viewNoun() + " by recorded join date; dots are exact saved-import totals. Click for all periods.", function () { openChartPage("tot"); }));
     view.appendChild(charts);
     return view;
   }
@@ -1082,18 +1081,24 @@
     var snaps = R.snapshotSeries(state.snapshots).filter(function (x) { return x.date >= p.start && x.date <= p.end; });
     return { p: p, gran: R.granularityFor(preset), pts: R.totalsOverTime(activePool, p.start, p.end, R.granularityFor(preset)), snaps: snaps };
   }
+  // kind: "members" | "households" | "both" (both lines on one chart, sharing the y-axis).
   function totalsNode(td, kind, height) {
-    var isH = kind === "households", noun = isH ? "households" : "members";
-    var main = { name: "Current " + noun + " by recorded join date", color: C.COLORS[isH ? 3 : 1], points: td.pts.map(function (x) {
-      var v = isH ? x.households : x.members;
-      return { date: x.date, count: v, tip: L.formatDate(x.date) + ": " + num(v) + " " + noun, list: x.list };
-    }) };
-    var series = [main];
-    if (td.snaps.length) series.push({ name: "Saved imports (exact totals)", color: C.COLORS[0], dots: true, points: td.snaps.map(function (x) {
-      var v = isH ? x.households : x.count;
-      return { date: x.date, count: v, tip: "Saved import " + L.formatDate(x.date) + ": " + num(v) + " " + noun, list: [] };
-    }) });
-    return C.timeLine(series, { start: td.p.start, end: td.p.end, height: height || 280, ariaLabel: "Total " + noun + " over time",
+    var kinds = kind === "both" ? ["members", "households"] : [kind], series = [];
+    kinds.forEach(function (k) {
+      var isH = k === "households", pre = kinds.length > 1 ? (isH ? "Households" : "Members") : "Current " + k;
+      series.push({ name: pre + " (by recorded join date)", color: C.COLORS[isH ? 3 : 1], points: td.pts.map(function (x) {
+        var v = isH ? x.households : x.members;
+        return { date: x.date, count: v, tip: L.formatDate(x.date) + ": " + num(v) + " " + k, list: x.list };
+      }) });
+    });
+    if (td.snaps.length) kinds.forEach(function (k) {
+      var isH = k === "households";
+      series.push({ name: kinds.length > 1 ? "Saved imports: " + k : "Saved imports (exact totals)", color: C.COLORS[isH ? 2 : 0], dots: true, points: td.snaps.map(function (x) {
+        var v = isH ? x.households : x.count;
+        return { date: x.date, count: v, tip: "Saved import " + L.formatDate(x.date) + ": " + num(v) + " " + k, list: [] };
+      }) });
+    });
+    return C.timeLine(series, { start: td.p.start, end: td.p.end, height: height || 280, ariaLabel: "Total " + (kind === "both" ? "members and households" : kind) + " over time",
       onSelect: function (pt) { if (pt.list && pt.list.length) openList(pt.tip, pt.list); } });
   }
   function totalsIntro(td, suspect) {
@@ -1123,11 +1128,11 @@
     var granWord = { week: "week", month: "month", year: "year" }[gran];
     var title, chart, header, rows, members, intro;
 
-    if (cp.kind === "totm" || cp.kind === "toth") {
-      var isHt = cp.kind === "toth", td = totalsData(cp.preset, pool.filter(R.isActive));
-      title = isHt ? "Total households over time" : "Total members over time";
+    if (cp.kind === "tot") {
+      var td = totalsData(cp.preset, pool.filter(R.isActive));
+      title = state.view === "households" ? "Total households over time" : "Total membership over time";
       intro = totalsIntro(td, suspect);
-      chart = totalsNode(td, isHt ? "households" : "members", 380);
+      chart = totalsNode(td, state.view, 380);
       header = ["Date", "Members", "Households", "Source"];
       rows = td.pts.map(function (x, i) { return [L.formatDate(x.date), x.members, x.households, i === td.pts.length - 1 ? "today's roster" : i === 0 ? "period start" : "recorded join dates"]; });
       members = td.pts.map(function (x) { return x.list; });

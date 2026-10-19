@@ -199,7 +199,7 @@ Role/lifetime accounts (expiring 5+ years out) are left out. The Reports → Ren
 
 ## Total members / households over time (line charts)
 
-Dashboard cards **Total members over time** and **Total households over time** (shown according to the Show dropdown) open a full
+The dashboard card **Total membership over time** (members and households as two lines under Show: Both, one line otherwise) opens a full
 page with the eight periods (last month, 3/6 months, 1/2/5/10 years, since 1958), a supporting table and CSV/print. Two kinds of
 points are drawn, and they are **not the same thing**:
 - **Line — current members by recorded join date:** at each date, how many of *today's* active members had a join date on or

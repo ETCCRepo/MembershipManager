@@ -115,6 +115,14 @@
     var d0 = day(opts.start), d1 = day(opts.end);
     if (d1 <= d0) d1 = d0 + 1;
     var W = 720, H = opts.height || 300, m = { l: 52, r: 22, t: 34, b: 42 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+    var legend = [], lrow = 0, lx0 = m.l;
+    series.forEach(function (sr) {
+      var lw = 28 + sr.name.length * 6.2;
+      if (lx0 + lw > W - m.r && lx0 > m.l) { lrow++; lx0 = m.l; }
+      legend.push({ x: lx0, row: lrow });
+      lx0 += lw;
+    });
+    m.t = 20 + (lrow + 1) * 16; ih = H - m.t - m.b;
     var vals = all.map(function (p) { return p.count; });
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
     var pad = Math.max(1, Math.round((hi - lo) * 0.15)), minV = Math.max(0, lo - pad), maxV = hi + pad;
@@ -146,14 +154,11 @@
         svg.appendChild(g);
       });
     });
-    var lx = m.l;
     series.forEach(function (sr, si) {
-      var color = sr.color || COLORS[si % COLORS.length];
-      if (sr.dots) svg.appendChild(s("circle", { cx: lx + 6, cy: 14, r: 5, fill: "#fff", stroke: color, "stroke-width": 3 }));
-      else svg.appendChild(s("line", { x1: lx, x2: lx + 14, y1: 14, y2: 14, stroke: color, "stroke-width": 3 }));
-      var label = s("text", { x: lx + 20, y: 18, class: "chart-axis" }, sr.name);
-      svg.appendChild(label);
-      lx += 28 + sr.name.length * 6.2;
+      var color = sr.color || COLORS[si % COLORS.length], lx = legend[si].x, ly = 14 + legend[si].row * 16;
+      if (sr.dots) svg.appendChild(s("circle", { cx: lx + 6, cy: ly, r: 5, fill: "#fff", stroke: color, "stroke-width": 3 }));
+      else svg.appendChild(s("line", { x1: lx, x2: lx + 14, y1: ly, y2: ly, stroke: color, "stroke-width": 3 }));
+      svg.appendChild(s("text", { x: lx + 20, y: ly + 4, class: "chart-axis" }, sr.name));
     });
     return svg;
   }
