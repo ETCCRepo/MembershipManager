@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (late night, 11) — New this month so far card
+- Owner: add a card for new members/households so far this month after 'New last month'. Both cards now use the **meeting month** (the same Wednesday-after-first-Tuesday definition as the Monthly Meeting tab) via `R.meetingPeriods`; previously the dashboard's 'last month' was a rolling 30 days and disagreed with the meeting tab (1/1 vs 14/8 on the real data). 'New last month' = last completed meeting month; 'New this month so far' = the in-progress meeting month through today (on a meeting day it shows 'month begins ...'). Deployed.
+
 ### 2026-10-19 (late night, 10) — dashboard opens expanded
 - Owner: open the dashboard expanded. `makeCollapsible` now has a default (collapsed, except keys starting `dash:` which open expanded); an explicit true/false in `state.open` (click, Expand all, Collapse all) overrides it, and leaving/revisiting a page resets to the defaults. All other pages still open collapsed. Deployed.
 

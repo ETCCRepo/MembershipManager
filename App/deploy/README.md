@@ -171,7 +171,7 @@ Use the ClubExpress **Additional Member Data** report CSV. Open **Import**, choo
 
 ## The dashboard (kept deliberately simple)
 
-Five cards — **Membership**, **New last month** (its subtext gives 3 months and 1 year), **Renewed**, **Left to renew**, **Expired** — a one-line
+Six cards — **Membership**, **New last month** (the last completed *meeting month*; its subtext gives 3 months and 1 year), **New this month so far** (the meeting month in progress, through today), **Renewed**, **Left to renew**, **Expired** — a one-line
 last-import note, an "About these numbers" box, and up to four collapsed chart cards (new by month, households by type, new households by month,
 total membership over time; fewer under Show: Members or Households). The dashboard always covers the whole club (roles excluded) and has no
 filters; filter by status, type or place on **Reports** and **Members**. More breakdowns (status, type, tenure, geography, renewals, data quality)

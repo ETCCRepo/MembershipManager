@@ -409,11 +409,17 @@
 
     // Five cards: where we are, what's new, and the renewal picture.
     function newIn(key) { var p = R.period(key, t, "rolling"); return { p: p, list: R.newMembers(pool, p.start, p.end, suspect).members }; }
-    var n1 = newIn("1m"), n3 = newIn("3m"), n12 = newIn("12m");
+    // "Month" here is the club's meeting month (Wednesday after the first Tuesday through the next first
+    // Tuesday), the same one the Monthly Meeting tab uses, so both pages show the same numbers.
+    var mp = R.meetingPeriods(t, 2), mLast = mp.filter(function (x) { return x.completed; })[0], mNow = mp.filter(function (x) { return x.inProgress; })[0];
+    function newBetween(a, b) { return R.newMembers(pool, a, b, suspect).members; }
+    var n1 = { p: mLast, list: newBetween(mLast.start, mLast.end) }, n3 = newIn("3m"), n12 = newIn("12m");
+    var nNow = mNow.start <= t ? newBetween(mNow.start, t) : [];
     var rs = R.renewalStatus(pool, t, renewalCfg()), tgt = L.formatDate(rs.target);
     var grid = el("div", { class: "kpi-grid" });
     grid.appendChild(kpi("Membership", mmhh(active), viewWord() + " today", function () { openList("Membership (active members)", active); }));
-    grid.appendChild(kpi("New last month", mmhh(n1.list), "3 months " + mmhh(n3.list) + " · year " + mmhh(n12.list), function () { openList("New members — " + n1.p.label, n1.list, n1.p.start + " to " + n1.p.end); }));
+    grid.appendChild(kpi("New last month", mmhh(n1.list), n1.p.label + " · 3 months " + mmhh(n3.list) + " · year " + mmhh(n12.list), function () { openList("New members — last month", n1.list, n1.p.label); }));
+    grid.appendChild(kpi("New this month so far", mmhh(nNow), mNow.start <= t ? L.formatDate(mNow.start) + " to today · meeting " + L.formatDate(mNow.end) : "month begins " + L.formatDate(mNow.start), function () { openList("New members — this month so far", nNow, mNow.start <= t ? L.formatDate(mNow.start) + " to today" : ""); }));
     grid.appendChild(kpi("Renewed", mmhh(rs.renewed), "expire " + tgt + " or later", function () { openList("Renewed — expire " + tgt + " or later", rs.renewed); }));
     grid.appendChild(kpi("Left to renew", mmhh(rs.left), windowText(rs.window, t), function () { openList("Left to renew — expire before " + tgt, rs.left); }));
     grid.appendChild(kpi("Expired", mmhh(rs.expired), "past expiration date", function () { openList("Expired — expiration date before today", rs.expired); }));
