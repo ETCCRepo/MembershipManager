@@ -336,7 +336,7 @@
   }
 
   // ---------- Collapsible sections ----------
-  // Every page opens with its sections collapsed. A section's open/closed state lives in state.open[key]
+  // Pages open with their sections collapsed (the dashboard opens expanded). A section's open/closed state lives in state.open[key]
   // (so it survives re-renders on the same page) and is cleared when you move to another page or report.
   function makeCollapsible(panel, key, opts) {
     opts = opts || {};
@@ -349,8 +349,11 @@
     panel.classList.add("collapsible");
     state.secKeys.push(key);
     var name = h.textContent.replace(/[▸▾]/g, "").replace(/⤢ full page/, "").trim();
+    // Default state: collapsed everywhere except the dashboard, which opens expanded. An explicit
+    // true/false in state.open (from a click, Expand all or Collapse all) overrides the default.
+    function isOpen() { return state.open[key] !== undefined ? state.open[key] : key.indexOf("dash:") === 0; }
     function sync() {
-      var open = !!state.open[key];
+      var open = isOpen();
       panel.classList.toggle("collapsed", !open);
       btn.textContent = open ? "▾" : "▸";
       btn.setAttribute("aria-expanded", open ? "true" : "false");
@@ -358,7 +361,7 @@
     }
     function toggle(e) {
       if (e) e.stopPropagation();
-      if (state.open[key]) delete state.open[key]; else state.open[key] = true;
+      state.open[key] = !isOpen();
       sync();
     }
     btn.addEventListener("click", toggle);
@@ -369,7 +372,7 @@
   function sectionControls() {
     var all = el("button", { class: "btn" }, ["▾ Expand all"]), none = el("button", { class: "btn" }, ["▸ Collapse all"]);
     all.addEventListener("click", function () { state.secKeys.forEach(function (k) { state.open[k] = true; }); renderViews(); });
-    none.addEventListener("click", function () { state.open = {}; renderViews(); });
+    none.addEventListener("click", function () { state.secKeys.forEach(function (k) { state.open[k] = false; }); renderViews(); });
     return el("div", { class: "sec-controls no-print" }, [all, none]);
   }
 

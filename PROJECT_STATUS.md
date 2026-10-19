@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (late night, 10) — dashboard opens expanded
+- Owner: open the dashboard expanded. `makeCollapsible` now has a default (collapsed, except keys starting `dash:` which open expanded); an explicit true/false in `state.open` (click, Expand all, Collapse all) overrides it, and leaving/revisiting a page resets to the defaults. All other pages still open collapsed. Deployed.
+
 ### 2026-10-19 (late night, 9) — simpler dashboard
 - Owner: the dashboard looked very busy. `buildDashboardView` rewritten: no filter bar (dashboard ignores the Reports/Members filters), 12 KPI cards -> 5 (Membership, New last month with 3-month/1-year in its subtext, Renewed, Left to renew, Expired), the long explanatory line -> one 'Last import' line (definitions moved into 'About these numbers'), status and type donuts removed (type/status still under Reports), Expand/Collapse all only on pages with 5+ sections. The old cards (6-month / 5-year new, in records since 1958, renewals due in 30 days, latest import card) were dropped; the data is still in Reports. Deployed.
 

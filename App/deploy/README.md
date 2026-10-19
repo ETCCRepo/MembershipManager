@@ -179,7 +179,7 @@ are under Reports. Expand all / Collapse all appear only on pages with five or m
 
 ## Collapsed sections
 
-Every page opens with its sections **collapsed**: the dashboard's chart cards, each report and Monthly Meeting section, the Import history,
+Pages open with their sections **collapsed** — except the **dashboard, which opens expanded** — covering each report and Monthly Meeting section, the Import history,
 and the Developer panels. Click a section's heading or its ▸ / ▾ button to open it, or use **Expand all / Collapse all** at the top of the
 page. What you open stays open while you work on that page (changing filters or the Show setting does not re-collapse it); switching pages or
 reports collapses everything again. On the dashboard, clicking a chart card itself still opens its full page — only the ▸ button toggles it.
