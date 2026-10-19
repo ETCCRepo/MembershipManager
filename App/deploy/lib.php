@@ -573,3 +573,12 @@ function membership_sync_token_new() {
 function membership_sync_token_revoke() {
     return membership_auth_update(['syncTokenHash' => '', 'syncTokenCreatedAt' => null]);
 }
+
+// The developer password also opens the website (the owner's request), but only once it has been changed
+// from the initial one: the initial password is a known default and must never unlock member data. A changed
+// developer password is stored as devHash in data/auth.json; the initial one never is.
+function membership_dev_password_login_ok($pw) {
+    $a = membership_auth_read();
+    $h = (string)($a['devHash'] ?? '');
+    return $h !== '' && membership_verify_password($pw, $h);
+}

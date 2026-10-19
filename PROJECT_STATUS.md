@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (night, 16) — developer password also logs into the website
+- Owner: the developer password should be accepted at the website login as well. `index.php` now accepts the site password OR `membership_dev_password_login_ok()` (lib.php). **Guard:** only once the developer password has been changed from the initial one (a changed one is stored as `devHash`); the initial default never opens the site. The same lockout (5 wrong tries / 15 min) applies; logging in this way does not unlock the Developer menu. Not exercised live (needs the owner's password). Deployed.
+
 ### 2026-10-19 (night, 15) — Import moved into Developer
 - Owner: remove the Import tab and move Import Members from the left menu into Developer. Tabs are now Dashboard, Monthly Meeting, Members; the hamburger menu has Developer and Logout; the full import UI (file, preview, mapping, confirm, history) is a collapsible 'Import members' section at the top of Developer (unlock with the developer password). The empty-roster button opens Developer. An old `#import` link opens the Dashboard. Deployed.
 
