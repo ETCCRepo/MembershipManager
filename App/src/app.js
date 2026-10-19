@@ -141,9 +141,6 @@
     menu.classList.toggle("open", state.menuOpen);
     backdrop.classList.toggle("open", state.menuOpen);
     menu.innerHTML = "";
-    var imp = el("button", { class: "hdr-menu-item" }, ["⬆ Import Members"]);
-    imp.addEventListener("click", function () { state.menuOpen = false; renderHeaderMenu(); selectTab("import"); });
-    menu.appendChild(imp);
     var dev = el("button", { class: "hdr-menu-item" }, ["🛠 Developer"]);
     dev.addEventListener("click", function () { state.menuOpen = false; renderHeaderMenu(); openDeveloper(); });
     menu.appendChild(dev);
@@ -166,7 +163,7 @@
     state.secKeys = [];
     app.appendChild(buildTabs());
     var view = state.tab === "members" ? buildMembersView() :
-      state.tab === "import" ? buildImportView() : state.tab === "developer" ? buildDeveloperView() : state.tab === "meeting" ? buildMeetingView() : buildDashboardView();
+      state.tab === "developer" ? buildDeveloperView() : state.tab === "meeting" ? buildMeetingView() : buildDashboardView();
     if (state.secKeys.length >= 5) view.insertBefore(sectionControls(), view.firstChild);
     app.appendChild(view);
     renderListModal();
@@ -174,7 +171,7 @@
     renderChartPage();
   }
   function buildTabs() {
-    var tabs = [["dashboard", "Dashboard"], ["meeting", "Monthly Meeting"], ["members", "Members"], ["import", "Import"]];
+    var tabs = [["dashboard", "Dashboard"], ["meeting", "Monthly Meeting"], ["members", "Members"]];
     var bar = el("div", { class: "tabs no-print", role: "tablist" }, tabs.map(function (t) {
       var d = el("div", { class: "tab" + (state.tab === t[0] ? " active" : ""), text: t[1], role: "tab", tabindex: "0" });
       d.addEventListener("click", function () { selectTab(t[0]); });
@@ -193,8 +190,8 @@
     return bar;
   }
   function emptyRosterState() {
-    var b = el("button", { class: "btn primary" }, ["⬆ Import Members"]);
-    b.addEventListener("click", function () { selectTab("import"); });
+    var b = el("button", { class: "btn primary" }, ["Import members (Developer menu)"]);
+    b.addEventListener("click", function () { openDeveloper(); });
     return el("div", { class: "panel empty-state" }, [el("p", { text: "No membership data has been imported yet." }), b]);
   }
 
@@ -836,7 +833,7 @@
     if (imp && imp.error) panel.appendChild(el("div", { class: "errors", text: imp.error }));
     if (imp && imp.result) panel.appendChild(importResult(imp.result));
     else if (imp && imp.parsed) panel.appendChild(importPreview(imp));
-    view.appendChild(panel);
+    view.appendChild(makeCollapsible(panel, "import:main"));
     view.appendChild(makeCollapsible(importHistory(), "import:history"));
     return view;
   }
@@ -1250,6 +1247,9 @@
     view.appendChild(makeCollapsible(rForm, "dev:renewal"));
     rPreview();
 
+    // Import members (moved here from its own tab): file -> preview -> confirm, plus the import history.
+    view.appendChild(buildImportView());
+
     // Daily sync: a token for the scheduled task on the club's computer, plus the last run's result.
     var sy = state.dev.sync || state.sync || {};
     var syBox = el("div", { class: "panel pw-form" }, [el("h3", { text: "Daily sync" }),
@@ -1307,7 +1307,7 @@
 
   function init() {
     var h = (location.hash || "").replace("#", "");
-    if (["dashboard", "meeting", "members", "import"].indexOf(h) !== -1) state.tab = h;
+    if (["dashboard", "meeting", "members"].indexOf(h) !== -1) state.tab = h;
     buildHeaderMenu();
     renderViews();
   }

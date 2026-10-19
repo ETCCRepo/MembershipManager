@@ -9,23 +9,23 @@
 //
 // The profile is shared with the CarShow and Vette Fest syncs, so signing in here fixes all of them.
 // This polls until it can actually see a working admin session (the Control Panel link) and says so.
-const { openContext, PROFILE_DIR, HOME_URL, persistentCookies, sessionIsLive } = require("./clubexpress-common");
+const { openContext, PROFILE_DIR, CONTROL_PANEL_URL, persistentCookies, sessionIsLive } = require("./clubexpress-common");
 
 (async () => {
   console.log("Profile folder: " + PROFILE_DIR);
-  console.log("Opening: " + HOME_URL);
+  console.log("Opening: " + CONTROL_PANEL_URL);
   console.log("");
   console.log("  >> Sign in IN THE WINDOW THAT JUST OPENED. <<");
   console.log("     It has its own cookie jar -- a login in your normal Chrome will not register here.");
   console.log("");
-  console.log('  1. Click "Member Login" and sign in. Tick "Remember Me" so the session lasts.');
+  console.log("  1. Sign in on the page that opened (or click Member Login). Tick \"Remember Me\" so the session lasts.");
   console.log("  2. Wait for this console to print CONFIRMED (checked every 5 seconds).");
   console.log("  3. Then close the window.");
   console.log("");
 
   const context = await openContext({ headless: false });
   const page = context.pages()[0] || (await context.newPage());
-  await page.goto(HOME_URL, { waitUntil: "domcontentloaded", timeout: 60000 }).catch((e) => console.error("Could not open ClubExpress: " + e.message));
+  await page.goto(CONTROL_PANEL_URL, { waitUntil: "domcontentloaded", timeout: 60000 }).catch((e) => console.error("Could not open ClubExpress: " + e.message));
 
   let closed = false, live = false, durable = false, last = null;
   context.on("close", () => { closed = true; });
@@ -42,7 +42,7 @@ const { openContext, PROFILE_DIR, HOME_URL, persistentCookies, sessionIsLive } =
     if (verdict === "out") console.log("  Not signed in yet -- still watching.");
     else if (verdict === "durable") {
       const soonest = new Date(Math.min(...cookies.map((c) => c.expires)) * 1000);
-      console.log("  CONFIRMED -- signed in, and the Control Panel is reachable.");
+      console.log("  CONFIRMED -- signed in, and the Control Panel (People) is reachable.");
       console.log("  Session is DURABLE -- lasts until at least " + soonest.toLocaleString() + ".");
       console.log("  You can close the window now.");
     } else {

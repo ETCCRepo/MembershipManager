@@ -1,5 +1,5 @@
-// Shared ClubExpress browser plumbing for the member sync: the dedicated Chrome profile, the signed-in check,
-// and frame-aware locators. Adapted from the CarShow / Vette Fest apps' clubexpress.js.
+// Shared ClubExpress browser plumbing for the member sync: the dedicated Chrome profile and the signed-in check.
+// Adapted from the CarShow / Vette Fest apps' clubexpress.js.
 //
 // Auth model: this NEVER logs in. It drives a dedicated, persistent Chrome profile that an officer signed into
 // ClubExpress once by hand (clubexpress-login.js, with "Remember Me" ticked). That keeps ClubExpress credentials
@@ -9,8 +9,14 @@ const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright-core");
 
+const BASE = "https://www.etccwebsite.com"; // the www host: ClubExpress's auth cookie (MEMBER_TOKEN) is host-only on it
 const CLUB_ID = "313652"; // East Tennessee Corvette Club on ClubExpress
-const HOME_URL = "https://www.etccwebsite.com/content.aspx?page_id=0&club_id=" + CLUB_ID; // www host: the auth cookie is host-only
+const CONTROL_PANEL_URL = BASE + "/content.aspx?page_id=15&club_id=" + CLUB_ID;
+// The Control Panel's "People" tab is loaded from this URL (found by looking at the signed-in admin UI, 2026-10-19).
+const PEOPLE_TAB_URL = BASE + "/basic_modules/club_admin/cp_tab.aspx?t=0&club_id=" + CLUB_ID;
+// Known page ids, used only if the links cannot be found: Additional Member Data = 147, its "Export Answers" popup = 394.
+const DEFAULT_MEMBER_DATA_URL = BASE + "/content.aspx?page_id=147&club_id=" + CLUB_ID + "&actr=3";
+const DEFAULT_EXPORT_POPUP_URL = BASE + "/popup.aspx?page_id=394&club_id=" + CLUB_ID;
 
 const PROFILE_DIR = path.join(
   process.env.LOCALAPPDATA || path.join(process.env.USERPROFILE || ".", "AppData", "Local"),
@@ -43,46 +49,22 @@ async function persistentCookies(context, domainPattern = /etccwebsite\.com$/i) 
   return cookies.filter((c) => c.expires && c.expires > 0 && domainPattern.test((c.domain || "").replace(/^\./, "")));
 }
 
-// ClubExpress is ASP.NET WebForms with generated ids, so everything anchors on visible text and role, and every
-// lookup sweeps ALL frames (admin panels are often rendered inside an iframe).
-async function firstVisibleInAnyFrame(page, buildCandidates, timeout = 8000) {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    for (const frame of page.frames()) {
-      let candidates;
-      try { candidates = buildCandidates(frame); } catch (_) { continue; }
-      for (const locator of candidates) {
-        const el = locator.first();
-        if (await el.isVisible().catch(() => false)) return el;
-      }
-    }
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  return null;
+// Loads the People tab and returns { live, memberDataHref }. Signed out (or not an admin) the tab has no
+// "Additional Member Data" link. NOTE the public home page cannot be used for this check: it shows "Member Login"
+// even to a signed-in admin.
+async function readPeopleTab(page) {
+  await page.goto(PEOPLE_TAB_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+  const href = await page.evaluate(() => {
+    const a = [...document.querySelectorAll("a")].find((x) => /^\s*additional member data\s*$/i.test(x.textContent || ""));
+    return a ? a.getAttribute("href") : null;
+  }).catch(() => null);
+  return { live: !!href, memberDataHref: href ? new URL(href, page.url()).toString() : null };
 }
 
-const controlPanelCandidates = (frame) => [
-  frame.getByRole("link", { name: /^\s*control panel\s*$/i }),
-  frame.locator('a:has-text("Control Panel")'),
-];
-const memberLoginCandidates = (frame) => [
-  frame.getByRole("link", { name: /member login/i }),
-  frame.locator('input[type="password"]'),
-];
-
-// True when this page is ClubExpress's logged-out view.
-async function looksLoggedOut(page) {
-  if (/action=login/i.test(page.url())) return true;
-  return !!(await firstVisibleInAnyFrame(page, memberLoginCandidates, 1500));
-}
-
-// True when the profile has a working admin session: not logged out AND the Control Panel link is reachable.
 async function sessionIsLive(context) {
   const probe = await context.newPage();
   try {
-    await probe.goto(HOME_URL, { waitUntil: "domcontentloaded", timeout: 45000 });
-    if (await looksLoggedOut(probe)) return false;
-    return !!(await firstVisibleInAnyFrame(probe, controlPanelCandidates, 6000));
+    return (await readPeopleTab(probe)).live;
   } catch (_) {
     return false;
   } finally {
@@ -90,4 +72,7 @@ async function sessionIsLive(context) {
   }
 }
 
-module.exports = { CLUB_ID, HOME_URL, PROFILE_DIR, LoginError, openContext, persistentCookies, firstVisibleInAnyFrame, controlPanelCandidates, looksLoggedOut, sessionIsLive };
+module.exports = {
+  BASE, CLUB_ID, CONTROL_PANEL_URL, PEOPLE_TAB_URL, DEFAULT_MEMBER_DATA_URL, DEFAULT_EXPORT_POPUP_URL,
+  PROFILE_DIR, LoginError, openContext, persistentCookies, readPeopleTab, sessionIsLive,
+};

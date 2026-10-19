@@ -6,7 +6,7 @@ behind a password and store the member data on the server.
 
 Live location: **https://etccapps.com/apps/membershipmanager/**
 
-> **The Reports tab was removed on 2026-10-19 at the owner's request.** Tabs are now Dashboard, Monthly Meeting, Members and Import. Sections below
+> **The Reports tab was removed on 2026-10-19 at the owner's request.** Tabs are now Dashboard, Monthly Meeting and Members; **importing lives in the hamburger menu → Developer → Import members** (the Import tab and its menu item were removed on 2026-10-19). Sections below
 > that mention "Reports" describe the retired tab (status, type, tenure, geography, renewals, history, households, long-serving/anniversaries and
 > data-quality reports). The code is intact in git at commit `dcceb7c` and earlier; the metric functions in `App/src/reports.js` are still used by the
 > dashboard and Monthly Meeting. Filters by status/type/place now live only on the Members tab.
