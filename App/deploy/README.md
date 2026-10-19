@@ -205,20 +205,21 @@ A Windows scheduled task on the club's computer exports the ClubExpress **Additi
 as a **full snapshot**. Nothing ClubExpress-related is stored: the export drives a dedicated Chrome profile an officer signed into by hand
 (shared with the CarShow and Vette Fest syncs), and the upload uses a **sync token** — not a password — created in the Developer menu.
 
-**How it flows:** `App/sync/sync-members.js` → `clubexpress-members.js` (Control Panel → People → Additional Member Data → Export Answers → Export)
-→ the same parser/validator as the Import tab (`src/csvimport.js`) → `POST members-sync.php` (header `X-Sync-Token`). The server re-validates,
-then: an **identical** roster writes nothing; a changed roster becomes a dated snapshot (so *Total membership over time* gets an exact point);
-a file with **fewer than half** of the current members is refused as a truncated export. After every run the site records ok/failed — the
-**dashboard shows a red notice** if the last run failed or none has succeeded in 36 hours; the Developer menu shows the details. Exports are kept
-in `Z:\Backup\ETCC\Membership\Additional Member Data Report\answers-YYYYMMDD.csv` for 60 days.
-
+**How it flows:** `App/sync/sync-members.js` → `clubexpress-members.js` (follows Control Panel → People → Additional Member Data, then posts that page's
+own hidden "export" postback with the Active status ticked — exactly what its Export Answers popup does — and receives `answers.csv`; no browser clicking and
+no ClubExpress JavaScript, so it runs headless) → the same parser/validator as the Developer → Import members screen (`src/csvimport.js`) → `POST members-sync.php`
+(header `X-Sync-Token`). The server re-validates, then: an **identical** roster writes nothing ("No changes"); a changed roster becomes a dated snapshot (so *Total
+membership over time* gets an exact point) and an Import-history row marked **Daily sync**; a file with **fewer than half** of the current members is refused as a truncated
+export. After every run the site records ok/failed — the **dashboard shows a red notice** if the last run failed or none has succeeded in 36 hours; Developer → Daily sync
+shows the details. Exports are kept in `Z:\Backup\ETCC\Membership\Additional Member Data Report\answers-YYYYMMDD.csv` for 60 days. Members who lapse (no longer
+Active in ClubExpress) drop out of the next export and therefore out of the roster, exactly as with a manual full import.
 **One-time setup** (on the club computer, in `App\`):
 1. `npm install` (installs `playwright-core`; it uses the installed Google Chrome).
-2. `node sync\clubexpress-login.js` — sign into ClubExpress **in the window it opens, with “Remember Me” ticked**, and wait for CONFIRMED / DURABLE.
+2. `node sync\clubexpress-login.js` — sign into ClubExpress **in the window it opens (not your everyday Chrome), with “Remember Me” ticked**, and wait for CONFIRMED / DURABLE.
 3. Website → Developer → **Daily sync → Create sync token**; copy it (shown once).
 4. `powershell -ExecutionPolicy Bypass -File sync\set-token.ps1` and paste the token (hidden prompt; stored as the user variable `MEMBERSHIP_SYNC_TOKEN`).
 5. `node sync\sync-members.js --dry-run` (no upload), then `node sync\sync-members.js` — the Import history shows a **Daily sync** row.
-6. `powershell -ExecutionPolicy Bypass -File sync\install-scheduled-task.ps1` (daily 6:30 AM; `-Time "07:15"` to change; `-Uninstall` removes it).
+6. `powershell -ExecutionPolicy Bypass -File sync\install-scheduled-task.ps1` (task `membership-sync-members`, daily 6:30 AM; `-Time "07:15"` to change; `-Uninstall` removes it). Run it once now with `Start-ScheduledTask -TaskName membership-sync-members`.
 
 **Maintenance:** if ClubExpress signs out (rare; weeks to months), the dashboard shows the failure — re-run step 2. If ClubExpress changes the report's
 location, `node sync\clubexpress-members.js --discover --headed` walks the path and prints what is visible at each step. Replace or revoke the token any

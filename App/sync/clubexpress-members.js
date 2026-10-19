@@ -1,43 +1,38 @@
 // Exports the ClubExpress "Additional Member Data" report as a CSV, using the signed-in dedicated Chrome profile.
 //
 // Path (verified against the live admin UI on 2026-10-19): Control Panel -> People tab -> "Additional Member Data"
-// -> "Export Answers" (a popup form with a Membership Status filter, default Active) -> Export. The links are
-// FOLLOWED rather than hard-coded, with the known page ids as a fallback, so a renumbering does not break the sync.
+// -> "Export Answers". The popup that opens only sets two hidden fields on the Additional Member Data page
+// (hidden_membership_types = the ticked statuses, hidden_subgroup_id) and then posts that page back with
+// __EVENTTARGET = hidden_export_button; THAT request answers with the CSV (answers.csv). We send the same post
+// directly, so no popup, no clicking and no ClubExpress JavaScript is needed -- which matters because headless
+// Chrome cannot run ClubExpress's scripts (the script bundles answer 403). The page is found by following the
+// People tab's link (known page id 147 as a fallback), so a renumbering does not break the sync.
 //
-//   node sync/clubexpress-members.js --discover [--headed]   print what it finds at each step; downloads nothing
+// Membership status: the browser's own post with only "Active" ticked (the form's default) sends types "1", and
+// that is what the club's manual exports use. Override with MEMBERSHIP_STATUS_IDS (comma-separated ids) if the
+// club ever wants other statuses included.
 //
-// The final Export is a WebForms postback. Headless Chrome cannot run ClubExpress's postback scripts (the script
-// bundles answer 403), so -- as the CarShow app does -- the popup form is serialized exactly as a browser would
-// (__VIEWSTATE and all, with the Export button as __EVENTTARGET) and POSTed through the profile's own cookies;
-// ClubExpress answers with the CSV as an attachment. Anything that is not a CSV is refused.
+//   node sync/clubexpress-members.js --discover [--headed]   print what it finds; downloads nothing
 const fs = require("fs");
 const path = require("path");
-const { LoginError, openContext, readPeopleTab, DEFAULT_MEMBER_DATA_URL, DEFAULT_EXPORT_POPUP_URL } = require("./clubexpress-common");
+const { LoginError, openContext, readPeopleTab, DEFAULT_MEMBER_DATA_URL } = require("./clubexpress-common");
 
+const STATUS_IDS = (process.env.MEMBERSHIP_STATUS_IDS || "1").trim();
 const mask = (u) => String(u).replace(/(club_id|item_id|member_id|user_id)=\d+/gi, "$1=#");
 function dateStamp(d = new Date()) {
   const p = (n) => String(n).padStart(2, "0");
   return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate());
 }
 
-// Finds the "Export Answers" popup URL on the Additional Member Data page (an openModalPopup('...') onclick).
-async function findExportPopupUrl(page) {
-  const popupPath = await page.evaluate(() => {
-    const a = [...document.querySelectorAll("a")].find((x) => /export answers/i.test(x.textContent || ""));
-    const m = a && /openModalPopup\(\s*['"]([^'"]+)['"]/.exec(a.getAttribute("onclick") || "");
-    return m ? m[1] : null;
-  }).catch(() => null);
-  return popupPath ? new URL(popupPath, page.url()).toString() : null;
-}
-
-// Reads the export form: its action, its fields (as a browser would submit them) and its Export button.
+// Reads the Additional Member Data page's form the way a browser would submit it, ready to be posted back
+// as the export. Returns null if the page does not have the export hooks (layout changed / not an admin page).
 async function readExportForm(page) {
-  return page.evaluate(() => {
+  return page.evaluate((statusIds) => {
     const f = document.forms[0];
-    const btn = [...document.querySelectorAll("a, input[type=submit], input[type=button], button")].find((x) => /^export$/i.test((x.value || x.textContent || "").trim()));
-    if (!f || !btn) return null;
-    const m = /__doPostBack\(\s*'([^']+)'\s*,\s*'([^']*)'\s*\)/.exec((btn.getAttribute("href") || "") + " " + (btn.getAttribute("onclick") || ""));
-    if (!m) return null;
+    if (!f) return null;
+    const named = (re) => [...f.elements].find((e) => e.name && re.test(e.name));
+    const btn = named(/hidden_export_button$/), types = named(/hidden_membership_types$/), sub = named(/hidden_subgroup_id$/);
+    if (!btn || !types || !sub) return null;
     const fields = {};
     for (const el of f.elements) {
       if (!el.name || el.disabled) continue;
@@ -45,11 +40,12 @@ async function readExportForm(page) {
       if (el.type === "button" || el.type === "submit" || el.type === "file") continue;
       fields[el.name] = el.value;
     }
-    fields.__EVENTTARGET = m[1];
-    fields.__EVENTARGUMENT = m[2];
-    const status = fields["ctl00$membership_status_dropdown"] || "";
-    return { action: new URL(f.getAttribute("action") || location.href, location.href).toString(), fields, target: m[1], status };
-  });
+    fields[types.name] = statusIds; // what the popup's own script sets
+    fields[sub.name] = "-1";        // all subgroups
+    fields.__EVENTTARGET = btn.name;
+    fields.__EVENTARGUMENT = "";
+    return { action: new URL(f.getAttribute("action") || location.href, location.href).toString(), fields, target: btn.name };
+  }, STATUS_IDS);
 }
 
 async function exportMembersCsv({ destDir, log, headless = true, discover = false }) {
@@ -61,21 +57,16 @@ async function exportMembersCsv({ destDir, log, headless = true, discover = fals
     if (!tab.live) {
       throw new LoginError("ClubExpress is signed out -- run:  node sync\\clubexpress-login.js  and sign in WITH \"Remember Me\" ticked.");
     }
-    log("Signed in. Additional Member Data: " + mask(tab.memberDataHref));
+    const dataUrl = tab.memberDataHref || DEFAULT_MEMBER_DATA_URL;
+    log("Signed in. Additional Member Data: " + mask(dataUrl));
 
-    await page.goto(tab.memberDataHref || DEFAULT_MEMBER_DATA_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
-    let popupUrl = await findExportPopupUrl(page);
-    if (!popupUrl) { log('"Export Answers" link not found; using the known popup page'); popupUrl = DEFAULT_EXPORT_POPUP_URL; }
-    log("Export Answers form: " + mask(popupUrl));
-
-    // Always load the form fresh: it is a WebForms page whose __VIEWSTATE is consumed by each postback.
-    await page.goto(popupUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+    // Load the page fresh: it is a WebForms page whose __VIEWSTATE is consumed by each postback.
+    await page.goto(dataUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
     const form = await readExportForm(page);
     if (!form) {
-      const seen = await page.evaluate(() => (document.body.innerText || "").replace(/\s+/g, " ").slice(0, 200));
-      throw new Error("The Export Answers form has no Export button -- ClubExpress may have changed it. The page says: " + seen);
+      throw new Error("The Additional Member Data page has no export hooks -- ClubExpress may have changed it (run: npm run sync:discover).");
     }
-    log("Export control: postback " + form.target + "; Membership Status filter: " + (form.status || "(default)"));
+    log("Export control: postback " + form.target + "; membership status ids: " + STATUS_IDS);
     if (discover) { log("Discovery finished -- nothing was downloaded."); return null; }
 
     const destPath = path.join(destDir, "answers-" + dateStamp() + ".csv");

@@ -51,14 +51,25 @@ async function persistentCookies(context, domainPattern = /etccwebsite\.com$/i) 
 
 // Loads the People tab and returns { live, memberDataHref }. Signed out (or not an admin) the tab has no
 // "Additional Member Data" link. NOTE the public home page cannot be used for this check: it shows "Member Login"
-// even to a signed-in admin.
+// even to a signed-in admin. The tab content is an internal fragment that can stall when it is the very first page
+// loaded, so the normal Control Panel page is loaded first, as a browser would, and the whole step is tried twice.
 async function readPeopleTab(page) {
-  await page.goto(PEOPLE_TAB_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
-  const href = await page.evaluate(() => {
-    const a = [...document.querySelectorAll("a")].find((x) => /^\s*additional member data\s*$/i.test(x.textContent || ""));
-    return a ? a.getAttribute("href") : null;
-  }).catch(() => null);
-  return { live: !!href, memberDataHref: href ? new URL(href, page.url()).toString() : null };
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await page.goto(CONTROL_PANEL_URL, { waitUntil: "domcontentloaded", timeout: 45000 });
+      await page.goto(PEOPLE_TAB_URL, { waitUntil: "domcontentloaded", timeout: 45000 });
+      const href = await page.evaluate(() => {
+        const a = [...document.querySelectorAll("a")].find((x) => /^\s*additional member data\s*$/i.test(x.textContent || ""));
+        return a ? a.getAttribute("href") : null;
+      });
+      return { live: !!href, memberDataHref: href ? new URL(href, page.url()).toString() : null };
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+  throw lastErr;
 }
 
 async function sessionIsLive(context) {
