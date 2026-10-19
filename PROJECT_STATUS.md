@@ -23,6 +23,9 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 
 ## Session log
 
+### 2026-10-19 (late night, 9) — simpler dashboard
+- Owner: the dashboard looked very busy. `buildDashboardView` rewritten: no filter bar (dashboard ignores the Reports/Members filters), 12 KPI cards -> 5 (Membership, New last month with 3-month/1-year in its subtext, Renewed, Left to renew, Expired), the long explanatory line -> one 'Last import' line (definitions moved into 'About these numbers'), status and type donuts removed (type/status still under Reports), Expand/Collapse all only on pages with 5+ sections. The old cards (6-month / 5-year new, in records since 1958, renewals due in 30 days, latest import card) were dropped; the data is still in Reports. Deployed.
+
 ### 2026-10-19 (late night, 8) — pages open with sections collapsed
 - Owner: open all pages with sections collapsed. `makeCollapsible(panel, key, opts)` + `sectionControls()` in `app.js`; open state in `state.open`, cleared by `selectTab()` and on report change (`state.secKeys` = sections on the current page). Applies to dashboard chart cards (chevron-only toggle; clicking the card still opens the full page), report and Monthly Meeting sections, Import history and Developer panels; Expand all / Collapse all on each such page; print expands everything. Not collapsible: KPI cards, Members table, full-page chart view, list popups. Deployed.
 
