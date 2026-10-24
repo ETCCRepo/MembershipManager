@@ -143,10 +143,14 @@ if ($action === 'save_settings') {
         $merged = array_merge(membership_settings_read(), $changes);
         if ($merged['syncStart'] !== '' && $merged['syncEnd'] !== '' && $merged['syncEnd'] < $merged['syncStart']) dev_out(422, ['ok' => false, 'error' => 'The end date must be on or after the start date.']);
     }
-    foreach (['renewalStart', 'renewalEnd'] as $k) {
+    foreach (['renewalStart', 'renewalEnd', 'autoRenewDate', 'renewalSnapshot'] as $k) {
         if (!isset($body[$k])) continue;
-        if (!membership_valid_mmdd($body[$k])) dev_out(422, ['ok' => false, 'error' => 'Choose a valid month and day for the ' . ($k === 'renewalStart' ? 'renewal start' : 'renewal end') . ' (February 29 is not allowed).']);
+        if (!membership_valid_mmdd($body[$k])) dev_out(422, ['ok' => false, 'error' => 'Choose a valid month and day for the ' . ($k === 'renewalStart' ? 'renewal start' : ($k === 'renewalEnd' ? 'renewal end' : ($k === 'renewalSnapshot' ? 'membership renew snapshot' : 'new member auto renewal'))) . ' (February 29 is not allowed).']);
         $changes[$k] = $body[$k];
+    }
+    if (array_key_exists('renewalYears', $body)) {
+        if (!membership_setting_valid('renewalYears', $body['renewalYears'])) dev_out(422, ['ok' => false, 'error' => 'Choose valid months and days for the by-year renewal dates (February 29 is not allowed).']);
+        $changes['renewalYears'] = array_map(function ($d) { return ['start' => $d['start'], 'end' => $d['end']]; }, $body['renewalYears']);
     }
     if (!$changes) dev_out(422, ['ok' => false, 'error' => 'Nothing to save.']);
     $saved = membership_settings_update($changes);

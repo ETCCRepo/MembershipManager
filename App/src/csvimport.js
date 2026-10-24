@@ -206,6 +206,15 @@
       var key = base;
       if (seen[base]) {
         if (seen[base].name === nm) {
+          // The same person can be listed twice once lapsed members are exported; the Active row wins.
+          if (!/^active$/i.test(seen[base].member.status || "") && /^active$/i.test(m.status || "")) {
+            var old = seen[base];
+            rejected.push({ rowNumber: old.rowNumber, reason: "Duplicate of row " + rowNumber + " (same member number and name; the Active row is kept).", row: old.cols });
+            m.key = base; m.household = m.primaryMemberNumber || m.memberNumber || base; m.flags = flags;
+            members[members.indexOf(old.member)] = m;
+            seen[base] = { rowNumber: rowNumber, name: nm, member: m, flagged: false, cols: cols };
+            continue;
+          }
           rejected.push({ rowNumber: rowNumber, reason: "Duplicate of row " + seen[base].rowNumber + " (same member number and name).", row: cols });
           continue;
         }
@@ -216,7 +225,7 @@
       m.key = key;
       m.household = m.primaryMemberNumber || m.memberNumber || key;
       m.flags = flags;
-      var rec = { rowNumber: rowNumber, name: nm, member: m, flagged: false };
+      var rec = { rowNumber: rowNumber, name: nm, member: m, flagged: false, cols: cols };
       if (!seen[base]) seen[base] = rec;
       members.push(m);
     }

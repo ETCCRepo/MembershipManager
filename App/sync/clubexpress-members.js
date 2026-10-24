@@ -8,8 +8,8 @@
 // Chrome cannot run ClubExpress's scripts (the script bundles answer 403). The page is found by following the
 // People tab's link (known page id 147 as a fallback), so a renumbering does not break the sync.
 //
-// Membership status: the browser's own post with only "Active" ticked (the form's default) sends types "1", and
-// that is what the club's manual exports use. Override with MEMBERSHIP_STATUS_IDS (comma-separated ids) if the
+// Membership status ids (checked in the live popup 2026-10-24): 1 = Active, 2 = Expired, 3 = Dropped. All three are
+// exported so the Renewals tab can count members who lapsed; the dashboards still count only Active. Override with MEMBERSHIP_STATUS_IDS (comma-separated ids) if the
 // club ever wants other statuses included.
 //
 //   node sync/clubexpress-members.js --discover [--headed]   print what it finds; downloads nothing
@@ -17,7 +17,7 @@ const fs = require("fs");
 const path = require("path");
 const { LoginError, openContext, readPeopleTab, DEFAULT_MEMBER_DATA_URL } = require("./clubexpress-common");
 
-const STATUS_IDS = (process.env.MEMBERSHIP_STATUS_IDS || "1").trim();
+const STATUS_IDS = (process.env.MEMBERSHIP_STATUS_IDS || "1,2,3").trim();
 const mask = (u) => String(u).replace(/(club_id|item_id|member_id|user_id)=\d+/gi, "$1=#");
 function dateStamp(d = new Date()) {
   const p = (n) => String(n).padStart(2, "0");

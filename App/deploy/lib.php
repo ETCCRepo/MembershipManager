@@ -234,7 +234,9 @@ function membership_snapshot_summary($roster, $id, $mode, $sourceFile, $counts, 
     $keys = [];
     $singles = 0;
     $couples = 0;
+    $renewalRows = []; // [expiration, joined] per non-role record, for the Renewals tab's trend line
     foreach ($roster as $m) {
+        if (empty($m['isRole']) && !empty($m['expirationDate'])) $renewalRows[] = [(string)$m['expirationDate'], (string)($m['joinDate'] ?? '')];
         if (!empty($m['isRole']) || strcasecmp($m['status'] ?? '', 'Active') !== 0) continue;
         $keys[] = $m['key'];
         // Club definition: households = single members + (couple members / 2).
@@ -247,6 +249,7 @@ function membership_snapshot_summary($roster, $id, $mode, $sourceFile, $counts, 
         'households' => $singles + $couples / 2,
         'added' => $counts['added'], 'updated' => $counts['updated'], 'unchanged' => $counts['unchanged'],
         'notInFile' => $counts['notInFile'], 'rejected' => $rejectedCount, 'keys' => $keys,
+        'renewalRows' => $renewalRows,
     ];
 }
 
@@ -525,7 +528,7 @@ function membership_settings_file() {
 
 function membership_settings_defaults() {
     // sync*: when the automatic data import runs. syncStart/syncEnd are Eastern dates (YYYY-MM-DD); '' = no limit.
-    return ['renewalStart' => '10-01', 'renewalEnd' => '12-31', 'syncEnabled' => true, 'syncFrequency' => 'daily',
+    return ['renewalStart' => '10-01', 'renewalEnd' => '12-31', 'autoRenewDate' => '10-01', 'renewalSnapshot' => '02-01', 'renewalYears' => [], 'syncEnabled' => true, 'syncFrequency' => 'daily',
         'syncTime' => '06:30', 'syncStart' => '', 'syncEnd' => ''];
 }
 
@@ -543,6 +546,13 @@ function membership_valid_ymd($s) {
 
 function membership_setting_valid($k, $v) {
     switch ($k) {
+        case 'renewalYears':
+            if (!is_array($v)) return false;
+            foreach ($v as $yr => $d) {
+                if (!preg_match('/^20\d\d$/', (string)$yr) || !is_array($d) || !isset($d['start'], $d['end'])
+                    || !membership_valid_mmdd($d['start']) || !membership_valid_mmdd($d['end'])) return false;
+            }
+            return true;
         case 'syncTime': return membership_valid_hhmm($v);
         case 'syncEnabled': return is_bool($v);
         case 'syncFrequency': return $v === 'daily' || $v === 'hourly';

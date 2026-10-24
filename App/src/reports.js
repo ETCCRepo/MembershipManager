@@ -280,7 +280,7 @@
   // Memberships expire on the END date. The window for a year runs from START through the first END
   // on or after it, so it may wrap a year-end (start 11-15, end 01-31). Members who renew in the
   // window are extended one year, so the renewal TARGET is the END date a year after the window's end.
-  var RENEWAL_DEFAULTS = { start: "10-01", end: "12-31" };
+  var RENEWAL_DEFAULTS = { start: "10-01", end: "12-31", autoRenew: "10-01", snapshot: "02-01" };
   function mmdd(v, fallback) {
     var m = /^(\d{2})-(\d{2})$/.exec(v || "");
     if (m && validYmdParts(2001, +m[1], +m[2])) return { m: +m[1], d: +m[2] };
@@ -310,6 +310,71 @@
       else out.left.push(m);
     });
     return out;
+  }
+
+  // ---- renewal rate (Renewals tab) ------------------------------------------------------
+  // The cycle that opens in calendar year `y`: window start..end, the target a renewed member expires on or
+  // after, and the new-member auto-renewal cutoff (people who join AFTER it are renewed automatically for the
+  // next year, so they are not part of that cycle's renewal pool).
+  function cycleForYear(y, cfg) {
+    cfg = cfg || {};
+    var o = cfg.years && cfg.years[y] ? cfg.years[y] : {}; // per-year start/end set in the Developer menu
+    var S = mmdd(o.start || cfg.start, RENEWAL_DEFAULTS.start), E = mmdd(o.end || cfg.end, RENEWAL_DEFAULTS.end), A = mmdd(cfg.autoRenew, RENEWAL_DEFAULTS.autoRenew);
+    var ey = (E.m > S.m || (E.m === S.m && E.d >= S.d)) ? y : y + 1;
+    return { year: y, start: ymd(y, S.m, S.d), end: ymd(ey, E.m, E.d), target: ymd(ey + 1, E.m, E.d), cutoff: ymd(y, A.m, A.d) };
+  }
+  function cycleYearFor(today, cfg) { return +renewalWindow(today, cfg).start.slice(0, 4); }
+  // Pool for one cycle: not a role account, joined on/before the cutoff (or no join date), and paid through
+  // the end of the window (expiration on/after it — earlier lapses are not part of this cycle). Renewed =
+  // expiration on/after the target. Far-future (lifetime) dates are left out.
+  function inCycleRow(exp, join, c, horizon) {
+    return !!exp && exp >= c.end && exp <= horizon && !(join && join > c.cutoff);
+  }
+  function renewalRate(members, c, today) {
+    var horizon = addMonths(today, 60), pool = [], renewed = [], left = [];
+    members.forEach(function (m) {
+      if (isRole(m) || !inCycleRow(m.expirationDate, m.joinDate, c, horizon)) return;
+      pool.push(m);
+      (m.expirationDate >= c.target ? renewed : left).push(m);
+    });
+    return { cycle: c, pool: pool, renewed: renewed, left: left, pct: pool.length ? renewed.length / pool.length * 100 : null };
+  }
+  // One bar per renewal year (the year its renewal period starts) from `fromYear` whose snapshot date the following year (cfg.snapshot, default Feb 1) has passed: members on
+  // that date (membership not yet expired) as a share of members on the day before that year's renewal period starts. Anyone who
+  // joined after the previous year's auto-renewal cutoff is left out of both counts, as are roles and lifetime dates.
+  function renewalHistory(members, today, cfg, fromYear) {
+    var out = [], S = mmdd((cfg || {}).snapshot, RENEWAL_DEFAULTS.snapshot), horizon = addMonths(today, 60);
+    for (var yr = fromYear || 2020; yr <= parts(today).y; yr++) {
+      // `yr` is the renewal year: the cycle that starts in it, measured on the snapshot date the year after.
+      var ref = ymd(yr + 1, S.m, S.d), base = addDays(cycleForYear(yr, cfg).start, -1);
+      if (ref > today) continue;
+      var cutoff = cycleForYear(yr, cfg).cutoff, start = [], kept = [], lapsed = 0;
+      members.forEach(function (m) {
+        var e = m.expirationDate;
+        if (isRole(m) || !e || e > horizon || e < base || (m.joinDate && m.joinDate > cutoff)) return;
+        start.push(m);
+        if (e >= ref) kept.push(m);
+        else if (!isActive(m)) lapsed++;
+      });
+      out.push({ year: yr, ref: ref, base: base, start: start, kept: kept, // ClubExpress drops lapsed members from its lists after a while; with none seen the year cannot be measured.
+        lapsed: lapsed, pct: lapsed && start.length ? kept.length / start.length * 100 : null });
+    }
+    return out;
+  }
+  // Points for the line chart: each saved full import that recorded renewal rows ([expiration, join] pairs),
+  // from the window start to today. The live roster supplies today's point.
+  function renewalSeries(snapshots, c, today) {
+    var horizon = addMonths(today, 60), pts = [];
+    snapshots.forEach(function (s) {
+      if (s.mode !== "full" || !s.renewalRows || s.date < c.start || s.date > today) return;
+      var pool = 0, renewed = 0;
+      s.renewalRows.forEach(function (r) {
+        if (!inCycleRow(r[0], r[1], c, horizon)) return;
+        pool++; if (r[0] >= c.target) renewed++;
+      });
+      if (pool) pts.push({ date: s.date, pct: renewed / pool * 100, renewed: renewed, pool: pool });
+    });
+    return pts.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
   }
 
   // ---- anniversaries & long service ------------------------------------------------
@@ -481,7 +546,8 @@
     firstTuesday: firstTuesday, rangeLabel: rangeLabel, meetingPeriodEndingIn: meetingPeriodEndingIn, meetingPeriodAfter: meetingPeriodAfter,
     meetingPeriods: meetingPeriods, anniversariesInRange: anniversariesInRange, expiringInRange: expiringInRange,
     bucketsNew: bucketsNew, granularityFor: granularityFor, sampleDates: sampleDates, totalsOverTime: totalsOverTime,
-    renewalTarget: renewalTarget, renewalWindow: renewalWindow, renewalStatus: renewalStatus, RENEWAL_DEFAULTS: RENEWAL_DEFAULTS,
+    renewalTarget: renewalTarget, renewalWindow: renewalWindow, renewalStatus: renewalStatus, cycleForYear: cycleForYear, cycleYearFor: cycleYearFor, renewalRate: renewalRate,
+    renewalHistory: renewalHistory, renewalSeries: renewalSeries, RENEWAL_DEFAULTS: RENEWAL_DEFAULTS,
     snapshotSeries: snapshotSeries, snapshotChanges: snapshotChanges, bucketMembers: bucketMembers
   };
   if (typeof module === "object" && module.exports) module.exports = api;

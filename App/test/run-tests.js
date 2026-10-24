@@ -511,6 +511,53 @@ test("fewer than two full snapshots yields no movement figures", function () {
   eq(R.snapshotChanges(snaps.slice(0, 1)), []);
 });
 
+test("a person listed twice (Dropped and Active) keeps the Active row", function () {
+  var rows = I.parseCsv(["last_name,first_name,member_number,status", "A,B,1,Dropped", "A,B,1,Active", "C,D,2,Active", "C,D,2,Dropped"].join(String.fromCharCode(10)));
+  var out = I.buildMembers(rows, I.suggestMapping(rows[0]).mapping, { now: NOW });
+  eq([out.members.map(function (m) { return m.status; }), out.rejected.length], [["Active", "Active"], 2]);
+});
+
+console.log("Renewal rate (Renewals tab)");
+var CFG = { start: "10-01", end: "12-31", autoRenew: "10-01" };
+test("cycle dates: window, target and auto-renewal cutoff", function () {
+  eq(R.cycleForYear(2026, CFG), { year: 2026, start: "2026-10-01", end: "2026-12-31", target: "2027-12-31", cutoff: "2026-10-01" });
+});
+test("a year can have its own start and end dates", function () {
+  var c = R.cycleForYear(2024, { start: "10-01", end: "12-31", autoRenew: "10-01", years: { 2024: { start: "11-15", end: "01-31" } } });
+  eq([c.start, c.end, c.target], ["2024-11-15", "2025-01-31", "2026-01-31"]);
+  eq(R.cycleForYear(2025, { years: { 2024: { start: "11-15", end: "01-31" } } }).start, "2025-10-01");
+});
+test("pool excludes roles, later joiners and earlier lapses; renewed = expires on/after the target", function () {
+  var c = R.cycleForYear(2025, CFG), ms = [
+    { expirationDate: "2026-12-31", joinDate: "2020-01-01" },                 // renewed
+    { expirationDate: "2025-12-31", joinDate: "2020-01-01" },                 // not renewed
+    { expirationDate: "2026-12-31", joinDate: "2025-10-02" },                 // joined after cutoff: out
+    { expirationDate: "2024-12-31", joinDate: "2020-01-01" },                 // lapsed earlier: out
+    { expirationDate: "2026-12-31", joinDate: "2020-01-01", isRole: true },   // role: out
+    { expirationDate: "2025-12-31", joinDate: "2025-10-01" }                  // joined on the cutoff: in, not renewed
+  ];
+  var r = R.renewalRate(ms, c, "2027-03-01");
+  eq([r.pool.length, r.renewed.length, r.left.length, r.pct], [3, 1, 2, 1 / 3 * 100]);
+});
+test("history: members on the snapshot date vs the day before renewals start, leaving out later joiners, roles and earlier lapses", function () {
+  var ms = [
+    { expirationDate: "2026-12-31", joinDate: "2019-01-01" },                 // on both dates
+    { expirationDate: "2025-12-31", joinDate: "2019-01-01" },                 // on 9/30/2025, gone by Feb 1 2026
+    { expirationDate: "2026-12-31", joinDate: "2025-10-02" },                 // joined after cutoff: out
+    { expirationDate: "2024-12-31", joinDate: "2019-01-01" },                 // already gone: out
+    { expirationDate: "2026-12-31", joinDate: "2019-01-01", isRole: true }];  // role: out
+  var h = R.renewalHistory(ms, "2026-10-19", CFG, 2024), last = h[h.length - 1];
+  eq(h.map(function (x) { return x.year; }), [2024, 2025]);
+  eq([last.ref, last.base, last.start.length, last.kept.length, last.pct], ["2026-02-01", "2025-09-30", 2, 1, 50]);
+});
+test("trend points come from saved full imports with renewal rows", function () {
+  var c = R.cycleForYear(2026, CFG), snaps = [
+    { mode: "full", date: "2026-10-05", renewalRows: [["2026-12-31", "2020-01-01"], ["2027-12-31", "2020-01-01"]] },
+    { mode: "full", date: "2026-09-01", renewalRows: [["2026-12-31", "2020-01-01"]] },
+    { mode: "full", date: "2026-10-10" }, { mode: "partial", date: "2026-10-11", renewalRows: [["2027-12-31", ""]] }];
+  eq(R.renewalSeries(snaps, c, "2026-10-19").map(function (p) { return [p.date, p.pct]; }), [["2026-10-05", 50]]);
+});
+
 console.log("Membership directory (src/logic.js)");
 test("search matches any field, all terms required", function () {
   eq(L.searchMembers(members, "alex4@example.com").length, 1);

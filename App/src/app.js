@@ -23,12 +23,12 @@
     tab: "dashboard",
     members: [], importedAt: null, importLog: [], snapshots: [],
     unit: "people", includeRoles: false,
-    filters: { status: "", type: "", state: "", city: "" },
+    filters: { status: "Active", type: "", state: "", city: "" }, // lapsed (Expired/Dropped) people are imported too; Members shows Active until changed
     preset: "12m", periodMode: "rolling", custom: { start: "", end: "" },
     report: "new",
     search: "", sortKey: "lastName", sortDir: "asc",
     detailMember: null, list: null, menuOpen: false,
-    imp: null, chartPage: null, open: {}, secKeys: [], view: loadView(), settings: { renewalStart: "10-01", renewalEnd: "12-31" }, sync: null,
+    imp: null, chartPage: null, open: {}, secKeys: [], view: loadView(), settings: { renewalStart: "10-01", renewalEnd: "12-31", autoRenewDate: "10-01", renewalSnapshot: "02-01", renewalYears: {} }, sync: null,
     meetingEnd: null, meetingOpts: { joined: true, summary: true, renewals: true, anniversaries: true },
     dev: { loading: false, unlocked: false, system: null, message: "", error: "" }
   };
@@ -55,7 +55,9 @@
   function unitWord(n) { return state.unit === "households" ? (n === 1 ? "household" : "households") : (n === 1 ? "person" : "people"); }
   // Every count card shows members/households. households = single members + couple members / 2.
   // Renewal start/end (month-day) set in the Developer menu and shared by every browser.
-  function renewalCfg() { return { start: state.settings.renewalStart, end: state.settings.renewalEnd }; }
+  // Per-year renewal start/end overrides (an empty PHP array arrives as []).
+  function yearsOf(st) { return st && st.renewalYears && !Array.isArray(st.renewalYears) ? st.renewalYears : {}; }
+  function renewalCfg() { return { start: state.settings.renewalStart, end: state.settings.renewalEnd, autoRenew: state.settings.autoRenewDate, snapshot: state.settings.renewalSnapshot, years: state.settings.renewalYears }; }
   function windowText(w, t) {
     return w.open ? "renewal window closes " + L.formatDate(w.end) + " (" + R.daysBetween(t, w.end) + " days)" : "next renewal window opens " + L.formatDate(w.nextStart);
   }
@@ -87,7 +89,7 @@
     },
     ingestImportLog: function (log) { state.importLog = Array.isArray(log) ? log : []; renderViews(); },
     ingestSnapshots: function (snaps) { state.snapshots = Array.isArray(snaps) ? snaps : []; renderViews(); },
-    ingestSettings: function (st) { if (st && typeof st === "object") { state.settings = { renewalStart: st.renewalStart || "10-01", renewalEnd: st.renewalEnd || "12-31" }; renderViews(); } },
+    ingestSettings: function (st) { if (st && typeof st === "object") { state.settings = { renewalStart: st.renewalStart || "10-01", renewalEnd: st.renewalEnd || "12-31", autoRenewDate: st.autoRenewDate || "10-01", renewalSnapshot: st.renewalSnapshot || "02-01", renewalYears: yearsOf(st) }; renderViews(); } },
     ingestSync: function (sy) { state.sync = sy && typeof sy === "object" ? sy : null; renderViews(); }
   };
 
@@ -96,7 +98,7 @@
     var f = state.filters;
     return R.pool(state.members, {
       includeRoles: state.includeRoles, unit: state.unit,
-      status: f.status ? [f.status] : null, types: f.type ? [f.type] : null,
+      status: f.status ? [f.status] : ["Active"], types: f.type ? [f.type] : null,
       states: f.state ? [f.state] : null, cities: f.city ? [f.city] : null
     });
   }
@@ -105,7 +107,7 @@
   function peoplePoolFiltered() {
     var f = state.filters;
     return R.pool(state.members, { includeRoles: state.includeRoles, unit: "people",
-      status: f.status ? [f.status] : null, types: f.type ? [f.type] : null, states: f.state ? [f.state] : null, cities: f.city ? [f.city] : null });
+      status: f.status ? [f.status] : ["Active"], types: f.type ? [f.type] : null, states: f.state ? [f.state] : null, cities: f.city ? [f.city] : null });
   }
   function currentPeriod() { return R.period(state.preset, today(), state.periodMode, state.custom); }
   function distinct(key) {
@@ -163,7 +165,7 @@
     state.secKeys = [];
     app.appendChild(buildTabs());
     var view = state.tab === "members" ? buildMembersView() :
-      state.tab === "developer" ? buildDeveloperView() : state.tab === "meeting" ? buildMeetingView() : buildDashboardView();
+      state.tab === "developer" ? buildDeveloperView() : state.tab === "renewals" ? buildRenewalsView() : state.tab === "meeting" ? buildMeetingView() : buildDashboardView();
     if (state.secKeys.length >= 5) view.insertBefore(sectionControls(), view.firstChild);
     app.appendChild(view);
     renderListModal();
@@ -171,7 +173,7 @@
     renderChartPage();
   }
   function buildTabs() {
-    var tabs = [["dashboard", "Dashboard"], ["meeting", "Monthly Meeting"], ["members", "Members"]];
+    var tabs = [["dashboard", "Dashboard"], ["renewals", "Renewals"], ["meeting", "Monthly Meeting"], ["members", "Members"]];
     var bar = el("div", { class: "tabs no-print", role: "tablist" }, tabs.map(function (t) {
       var d = el("div", { class: "tab" + (state.tab === t[0] ? " active" : ""), text: t[1], role: "tab", tabindex: "0" });
       d.addEventListener("click", function () { selectTab(t[0]); });
@@ -234,6 +236,8 @@
 
   // Click-through: the members behind a number or a chart segment.
   function openList(title, members, note) {
+    // New-member lists read oldest join date first (then by name); other lists keep the order they were given.
+    if (/^New members/.test(title)) members = members.slice().sort(function (x, y) { return (x.joinDate || "") < (y.joinDate || "") ? -1 : (x.joinDate || "") > (y.joinDate || "") ? 1 : memberLine(x).localeCompare(memberLine(y)); });
     state.list = { title: title, members: members, note: note || "" };
     renderListModal();
   }
@@ -411,7 +415,7 @@
     var view = el("div", { class: "view" });
     if (!state.members.length) { view.appendChild(emptyRosterState()); return view; }
     // The dashboard is the whole-club overview: it ignores the Members filters (roles excluded).
-    var t = today(), pool = R.pool(state.members, {}), suspect = R.suspectJoinDates(state.members);
+    var t = today(), pool = R.pool(state.members, { status: ["Active"] }), suspect = R.suspectJoinDates(state.members);
     var active = pool.filter(R.isActive);
     var src = state.importLog.length && state.importLog[0].sourceFile ? " · " + state.importLog[0].sourceFile : "";
     var sy = syncLine();
@@ -426,13 +430,20 @@
     function newBetween(a, b) { return R.newMembers(pool, a, b, suspect).members; }
     var n1 = { p: mLast, list: newBetween(mLast.start, mLast.end) }, n3 = newIn("3m"), n12 = newIn("12m");
     var nNow = mNow.start <= t ? newBetween(mNow.start, t) : [];
-    var rs = R.renewalStatus(pool, t, renewalCfg()), tgt = L.formatDate(rs.target);
+    var rs = R.renewalStatus(pool, t, renewalCfg());
+    // Renewed / Left to renew are for this year's renewal (same pool and dates as the Renewals tab).
+    var rcfg = renewalCfg(), rw = R.renewalWindow(t, rcfg), rc = R.cycleForYear(rw.open ? +rw.start.slice(0, 4) : +t.slice(0, 4), rcfg);
+    var rr = R.renewalRate(pool, rc, t), tgt = L.formatDate(rc.target);
+    // New members who joined after the auto-renewal date are renewed automatically, so they count as renewed.
+    var autoNew = pool.filter(function (m) { return m.joinDate && m.joinDate > rc.cutoff && m.joinDate <= t; });
+    var renewedAll = rr.renewed.concat(autoNew.filter(function (m) { return rr.renewed.indexOf(m) === -1; }))
+      .sort(function (x, y) { return (x.joinDate || "") < (y.joinDate || "") ? -1 : (x.joinDate || "") > (y.joinDate || "") ? 1 : memberLine(x).localeCompare(memberLine(y)); });
     var grid = el("div", { class: "kpi-grid" });
     grid.appendChild(kpi("Membership", mmhh(active), viewWord() + " today", function () { openList("Membership (active members)", active); }));
     grid.appendChild(kpi("New last month", mmhh(n1.list), n1.p.label + " · 3 months " + mmhh(n3.list) + " · year " + mmhh(n12.list), function () { openList("New members — last month", n1.list, n1.p.label); }));
     grid.appendChild(kpi("New this month so far", mmhh(nNow), mNow.start <= t ? L.formatDate(mNow.start) + " to today · meeting " + L.formatDate(mNow.end) : "month begins " + L.formatDate(mNow.start), function () { openList("New members — this month so far", nNow, mNow.start <= t ? L.formatDate(mNow.start) + " to today" : ""); }));
-    grid.appendChild(kpi("Renewed", mmhh(rs.renewed), "expire " + tgt + " or later", function () { openList("Renewed — expire " + tgt + " or later", rs.renewed); }));
-    grid.appendChild(kpi("Left to renew", mmhh(rs.left), windowText(rs.window, t), function () { openList("Left to renew — expire before " + tgt, rs.left); }));
+    grid.appendChild(kpi("Renewed", mmhh(renewedAll), "expire " + tgt + " or later, plus " + mmhh(autoNew) + " new since " + L.formatDate(rc.cutoff), function () { openList("Renewed — expire " + tgt + " or later, or joined after " + L.formatDate(rc.cutoff), renewedAll); }));
+    grid.appendChild(kpi("Left to renew", mmhh(rr.left), windowText(rw, t), function () { openList("Left to renew — expire before " + tgt, rr.left); }));
     grid.appendChild(kpi("Expired", mmhh(rs.expired), "past expiration date", function () { openList("Expired — expiration date before today", rs.expired); }));
     view.appendChild(grid);
     view.appendChild(caveats(pool));
@@ -449,8 +460,68 @@
       "Households = single members + couple members ÷ 2.", function () { openChartPage("htype"); }));
     if (state.view === "both") charts.appendChild(chartPanel("New households by month (last 12 months)", C.bar(R.householdsMonthly(pool, p12.start, p12.end, suspect), { ariaLabel: "New households by month", onSelect: function (d) { openList("New members — " + d.label, d.members); } }),
       "Each couple member counts as half a household.", function () { openChartPage("hnew"); }));
-    charts.appendChild(chartPanel(vH ? "Total households over time (last year)" : "Total membership over time (last year)", totalsNode(totalsData("12m", active), state.view, 260),
-      "Today's " + viewNoun() + " by recorded join date; dots are exact saved-import totals. Click for all periods.", function () { openChartPage("tot"); }));
+    charts.appendChild(chartPanel(vH ? "Total households over time" : "Total membership over time", totalsNode(totalsData("12m", active), state.view, 260),
+      "Today's " + viewNoun() + " by recorded join date. Click for all periods.", function () { openChartPage("tot"); }));
+    view.appendChild(charts);
+    return view;
+  }
+
+  // ---------- Renewals tab ----------
+  function buildRenewalsView() {
+    var view = el("div", { class: "view" });
+    if (!state.members.length) { view.appendChild(emptyRosterState()); return view; }
+    var t = today(), cfg = renewalCfg(), w = R.renewalWindow(t, cfg), c = R.cycleForYear(w.open ? +w.start.slice(0, 4) : +t.slice(0, 4), cfg); // this calendar year's renewal, even before it opens
+    function byName(list) { return list.slice().sort(function (x, y) { return (x.lastName || "").localeCompare(y.lastName || "", undefined, { sensitivity: "base" }) || (x.firstName || "").localeCompare(y.firstName || "", undefined, { sensitivity: "base" }); }); }
+    var rate = R.renewalRate(state.members, c, t); rate.renewed = byName(rate.renewed); rate.left = byName(rate.left); rate.pool = byName(rate.pool);
+    var pctText = rate.pct === null ? "n/a" : (Math.round(rate.pct * 10) / 10) + "%";
+    var grid = el("div", { class: "kpi-grid" });
+    grid.appendChild(kpi("Renewal start", L.formatDate(c.start), t < c.start ? "opens in " + R.daysBetween(t, c.start) + " days" : t <= c.end ? "window open now" : "window closed"));
+    grid.appendChild(kpi("Renewal end", L.formatDate(c.end), "memberships expire this day"));
+    grid.appendChild(kpi("New member auto renewal", L.formatDate(c.cutoff), "joined after this date: renewed automatically"));
+    grid.appendChild(kpi("Renewed", pctText, mmhh(rate.renewed) + " of " + mmhh(rate.pool) + " (expire " + L.formatDate(c.target) + " or later)", function () { openList("Renewed — expire " + L.formatDate(c.target) + " or later", rate.renewed); }));
+    grid.appendChild(kpi("Renewal start count", mmhh(rate.pool), "members in the renewal pool", function () { openList("Renewal start count — members in the renewal pool", rate.pool); }));
+    grid.appendChild(kpi("Left to renew", mmhh(rate.left), "in the renewal pool", function () { openList("Left to renew — expire before " + L.formatDate(c.target), rate.left); }));
+    view.appendChild(grid);
+    function listLink(text, title, list, primary) {
+      var a = el("button", { type: "button", class: "btn" + (primary ? " primary" : ""), style: "font-size:1.05rem;padding:.7rem 1.3rem;font-weight:600", text: text + " (" + mmhh(list) + ")" });
+      a.addEventListener("click", function () { openList(title, list); });
+      return a;
+    }
+    view.appendChild(el("div", { class: "toolbar no-print", style: "gap:.8rem;margin:.6rem 0 1rem" }, [
+      listLink("List of members who have renewed", "Renewed — expire " + L.formatDate(c.target) + " or later", rate.renewed, true),
+      listLink("List of members who have not renewed", "Not renewed — expire before " + L.formatDate(c.target), rate.left)]));
+    view.appendChild(el("div", { class: "hint", text: "Percent of members (people). The pool is everyone paid through " + L.formatDate(c.end) + " who joined on or before " + L.formatDate(c.cutoff) + "; role accounts and lifetime dates are left out. The dates are set in the menu → Developer → Renewal dates." }));
+
+    var r1 = function (x) { return Math.round(x * 10) / 10; };
+    var pts = R.renewalSeries(state.snapshots, c, t).map(function (p) { return { date: p.date, count: r1(p.pct), tip: L.formatDate(p.date) + ": " + r1(p.pct) + "% (" + p.renewed + " of " + p.pool + ")" }; });
+    if (rate.pct !== null && t >= c.start) pts = pts.filter(function (p) { return p.date !== t; }).concat([{ date: t, count: r1(rate.pct), tip: L.formatDate(t) + " (today): " + pctText + " (" + rate.renewed.length + " of " + rate.pool.length + ")" }]);
+    var charts = el("div", { class: "chart-grid" });
+    charts.appendChild(chartPanel("% of members renewed, " + L.formatDate(c.start) + " to " + L.formatDate(c.end),
+      C.timeLine([{ name: "% renewed", points: pts }], { start: c.start, end: c.end > t ? c.end : t, emptyText: t < c.start ? "Renewals open " + L.formatDate(c.start) + "; the line starts then." : undefined, ariaLabel: "Percent of members renewed over time" }),
+      "One point per saved import this cycle, plus today. The trend fills in as daily imports are saved; earlier days were not recorded."));
+    var hist = R.renewalHistory(state.members, t, cfg, 2024).filter(function (h) { return h.pct !== null; });
+    hist.forEach(function (h) { h.start = byName(h.start); h.kept = byName(h.kept); });
+    var sd = L.formatDate("2001-" + cfg.snapshot).replace(/\/2001$/, "");
+    function pctOf(h, kind) { var a = kindCount(h.start, kind); return a ? kindCount(h.kept, kind) / a * 100 : 0; }
+    var bars = hist.map(function (h) { return { label: String(h.year), count: r1(pctOf(h, state.view === "households" ? "households" : "members")), members: h.kept }; });
+    charts.appendChild(chartPanel("Renewed %, Since Club Express Migration", C.bar(bars, {
+      ariaLabel: "Members on the snapshot date as a percent of members on December 31, by year", emptyText: "No snapshot dates have passed yet.",
+      onSelect: function (d) { var h = hist.filter(function (x) { return String(x.year) === d.label; })[0]; openList("Members on " + L.formatDate(h.ref) + " — " + d.count + "% (" + h.start.length + " on " + L.formatDate(h.base) + " ÷ " + h.kept.length + " on " + L.formatDate(h.ref) + ")", h.kept); }
+    }), "Each bar: (members after renewal ÷ members before renewal) × 100; members are counted the day before the renewal period starts and on " + sd + " the following year, leaving out people who joined after that year's new member auto renewal date. Bars are labeled by the year the renewal period starts. Years are skipped when ClubExpress no longer lists anyone who lapsed in them."));
+    // Each count opens the member names behind it: the day before renewals start, the snapshot date, and who is in the first but not the second.
+    function nameLink(list, title, date) {
+      var a = el("a", { href: "#", text: mmhh(list) });
+      a.addEventListener("click", function (e) { e.preventDefault(); openList(title, list); });
+      return el("td", {}, [a, el("div", { class: "hint", text: date })]);
+    }
+    var rows = hist.map(function (h) {
+      var inKept = {}; h.kept.forEach(function (m) { inKept[m.key] = true; });
+      var gone = h.start.filter(function (m) { return !inKept[m.key]; });
+      return el("tr", {}, [el("td", { text: String(h.year) }), nameLink(h.start, "Members on " + L.formatDate(h.base), "on " + L.formatDate(h.base)), nameLink(h.kept, "Members on " + L.formatDate(h.ref), "on " + L.formatDate(h.ref)),
+        nameLink(gone, "On " + L.formatDate(h.base) + " but not on " + L.formatDate(h.ref), L.formatDate(h.base) + " to " + L.formatDate(h.ref)), el("td", { text: h.pct === null ? "n/a" : viewKinds().map(function (k) { return r1(pctOf(h, k)) + "%"; }).join("/") })]);
+    });
+    charts.appendChild(el("div", { class: "panel", style: "grid-column:1 / -1" }, [el("h3", { text: "Supporting table" }), el("div", { class: "tablewrap" }, [el("table", { class: "grid static" }, [
+      el("thead", {}, [el("tr", {}, ["Renewal year", "Before Renewal", "After Renewal", "Lost", "Renewed %"].map(function (x) { return el("th", { text: x }); }))]), el("tbody", {}, rows)])])]));
     view.appendChild(charts);
     return view;
   }
@@ -727,7 +798,7 @@
     var sel = periods.filter(function (p) { return p.end === state.meetingEnd; })[0] || lastDone;
     var prev = periods[periods.indexOf(sel) + 1] || null, nxt = R.meetingPeriodAfter(sel.end);
     var effEnd = sel.completed ? sel.end : t; // a month still in progress counts through today
-    var pool = R.pool(state.members, {}), active = pool.filter(R.isActive);
+    var pool = R.pool(state.members, { status: ["Active"] }), active = pool.filter(R.isActive);
     var o = state.meetingOpts;
     var isLast = sel === lastDone;
     var joinedTitle = isLast ? "Members who joined last month" : sel.inProgress ? "Members who joined this month so far" : "Members who joined that month";
@@ -966,13 +1037,6 @@
         return { date: x.date, count: v, tip: L.formatDate(x.date) + ": " + num(v) + " " + k, list: x.list };
       }) });
     });
-    if (td.snaps.length) kinds.forEach(function (k) {
-      var isH = k === "households";
-      series.push({ name: kinds.length > 1 ? "Saved imports: " + k : "Saved imports (exact totals)", color: C.COLORS[isH ? 2 : 0], dots: true, points: td.snaps.map(function (x) {
-        var v = isH ? x.households : x.count;
-        return { date: x.date, count: v, tip: "Saved import " + L.formatDate(x.date) + ": " + num(v) + " " + k, list: [] };
-      }) });
-    });
     return C.timeLine(series, { start: td.p.start, end: td.p.end, height: height || 280, ariaLabel: "Total " + (kind === "both" ? "members and households" : kind) + " over time",
       onSelect: function (pt) { if (pt.list && pt.list.length) openList(pt.tip, pt.list); } });
   }
@@ -980,8 +1044,7 @@
     var bulk = Object.keys(suspect).map(function (d) { return L.formatDate(d) + " (" + suspect[d] + " members)"; });
     return "Each point is how many of today's active members had a recorded join date on or before that date (" + td.p.label + ", " + L.formatDate(td.p.start) + " to " + L.formatDate(td.p.end) + "). " +
       "Members who have since left are not in today's export, so earlier points understate the club's real past totals" +
-      (bulk.length ? ", and the bulk-load join date" + (bulk.length > 1 ? "s " : " ") + bulk.join(", ") + (bulk.length > 1 ? " show" : " shows") + " up as a sudden jump that is not real growth" : "") + ". " +
-      "Dots are exact totals from full imports saved by this site; they are the only trustworthy past totals, and one more is added with each full import.";
+      (bulk.length ? ", and the bulk-load join date" + (bulk.length > 1 ? "s " : " ") + bulk.join(", ") + (bulk.length > 1 ? " show" : " shows") + " up as a sudden jump that is not real growth" : "") + ".";
   }
 
   // ---------- Full-page chart view (opened from a dashboard chart card) ----------
@@ -1011,7 +1074,6 @@
       header = ["Date", "Members", "Households", "Source"];
       rows = td.pts.map(function (x, i) { return [L.formatDate(x.date), x.members, x.households, i === td.pts.length - 1 ? "today's roster" : i === 0 ? "period start" : "recorded join dates"]; });
       members = td.pts.map(function (x) { return x.list; });
-      td.snaps.forEach(function (x) { rows.push([L.formatDate(x.date), x.count, x.households, "saved import (exact total)"]); members.push([]); });
     } else if (cp.kind === "htype") {
       // Households by membership type among current active members who joined in the period.
       // "Since 1958" is every current active member, including those without a usable join date.
@@ -1204,7 +1266,7 @@
       function two(n) { return (Number(n) < 10 ? "0" : "") + Number(n); }
       return { month: ms, day: ds, row: el("div", { class: "toolbar" }, [el("strong", { text: label }), ms, ds]), get: function () { return two(ms.value) + "-" + two(ds.value); } };
     }
-    var rStart = mdPicker("Renewals start", state.settings.renewalStart), rEnd = mdPicker("Renewals end (memberships expire)", state.settings.renewalEnd);
+    var rStart = mdPicker("Renewals start", state.settings.renewalStart), rEnd = mdPicker("Renewals end (memberships expire)", state.settings.renewalEnd), rAuto = mdPicker("New member auto renewal", state.settings.autoRenewDate), rSnap = mdPicker("Membership renew snapshot", state.settings.renewalSnapshot);
     var rMsg = el("div", { class: "hint", role: "status" }), rPrev = el("div", { class: "hint" });
     function rValid(v) { var m = Number(v.slice(0, 2)), d = Number(v.slice(3)); return d <= new Date(Date.UTC(2001, m, 0)).getUTCDate(); }
     function rPreview() {
@@ -1213,20 +1275,42 @@
       var w = R.renewalWindow(today(), { start: a, end: b });
       rPrev.textContent = "Current renewal window: " + L.formatDate(w.start) + " to " + L.formatDate(w.end) + " (" + (w.open ? "open now" : "closed; next opens " + L.formatDate(w.nextStart)) + "). Members who have renewed expire " + L.formatDate(w.target) + " or later.";
     }
-    [rStart.month, rStart.day, rEnd.month, rEnd.day].forEach(function (x) { x.addEventListener("change", rPreview); });
+    [rStart.month, rStart.day, rEnd.month, rEnd.day, rAuto.month, rAuto.day, rSnap.month, rSnap.day].forEach(function (x) { x.addEventListener("change", rPreview); });
+    // Each year from 2024 can have its own start and end (past years may have differed); a year left on the
+    // general dates above is not stored.
+    var yearRows = [], yearBox = el("div"), addYearBtn = el("button", { class: "btn", type: "button" });
+    function addYearRow(yy) {
+      var yo = state.settings.renewalYears[yy] || {}, r = { year: yy, start: mdPicker(yy + " renewals start", yo.start || state.settings.renewalStart), end: mdPicker(yy + " renewals end", yo.end || state.settings.renewalEnd) };
+      yearRows.push(r);
+      yearBox.appendChild(el("div", {}, [r.start.row, r.end.row]));
+      addYearBtn.textContent = "Add " + (yy + 1) + " renewal dates";
+    }
+    // 2025 through this year; the button adds the next year (dates saved for a later year are dropped on save unless it is added).
+    var lastYear = Number(today().slice(0, 4));
+    for (var yy = 2025; yy <= lastYear; yy++) addYearRow(yy);
+    addYearBtn.addEventListener("click", function () { addYearRow(yearRows[yearRows.length - 1].year + 1); });
     var rSave = el("button", { class: "btn primary", type: "submit" }, ["Save renewal dates"]);
     var rForm = el("form", { class: "panel pw-form" }, [el("h3", { text: "Renewal dates" }),
       el("div", { class: "hint", text: "When the club's renewal window opens and closes each year. Memberships expire on the end date; the Renewed / Left to renew / Expired cards use these dates." }),
-      rStart.row, rEnd.row, rPrev, el("div", { class: "toolbar" }, [rSave]), rMsg]);
+      rAuto.row, rSnap.row, el("h4", { text: "Renewal dates by year (2025 on)" }), el("div", { class: "hint", text: "The renewal start and end for each year. This year's dates also drive the Dashboard cards." })].concat([yearBox, addYearBtn], [ el("div", { class: "hint", text: "The snapshot date is when the Renewals bar chart counts members (compared with the day before the renewal start date of the year before). People who join after the new member auto renewal date are renewed automatically for next year, so the Renewals tab leaves them out of that year's renewal rate." }), el("div", { class: "toolbar" }, [rSave]), rMsg]));
     rForm.addEventListener("submit", function (e) {
       e.preventDefault();
-      var a = rStart.get(), b = rEnd.get();
-      if (!rValid(a) || !rValid(b)) { rMsg.className = "errors"; rMsg.textContent = "That month does not have that many days."; return; }
+      // The general start/end are taken from this year's row; every listed year is stored.
+      var thisRow = yearRows.filter(function (r) { return r.year === Number(today().slice(0, 4)); })[0];
+      var a = thisRow ? thisRow.start.get() : rStart.get(), b = thisRow ? thisRow.end.get() : rEnd.get(), c = rAuto.get(), sn = rSnap.get(), ys = {}, yokay = true;
+      Object.keys(state.settings.renewalYears).forEach(function (y) { if (Number(y) < 2025) ys[y] = state.settings.renewalYears[y]; }); // years no longer shown keep their saved dates
+      yearRows.forEach(function (r) {
+        var ya = r.start.get(), yb = r.end.get();
+        if (!rValid(ya) || !rValid(yb)) yokay = false;
+        else ys[r.year] = { start: ya, end: yb };
+      });
+      if (!yokay) { rMsg.className = "errors"; rMsg.textContent = "A month in the by-year dates does not have that many days."; return; }
+      if (!rValid(a) || !rValid(b) || !rValid(c) || !rValid(sn)) { rMsg.className = "errors"; rMsg.textContent = "That month does not have that many days."; return; }
       rSave.disabled = true; rMsg.className = "hint"; rMsg.textContent = "Saving…";
-      devApi("save_settings", { renewalStart: a, renewalEnd: b }).then(function (j) {
+      devApi("save_settings", { renewalStart: a, renewalEnd: b, autoRenewDate: c, renewalSnapshot: sn, renewalYears: ys }).then(function (j) {
         rSave.disabled = false;
         if (j && j.ok) {
-          if (j.settings) state.settings = { renewalStart: j.settings.renewalStart, renewalEnd: j.settings.renewalEnd };
+          if (j.settings) state.settings = { renewalStart: j.settings.renewalStart, renewalEnd: j.settings.renewalEnd, autoRenewDate: j.settings.autoRenewDate || "10-01", renewalSnapshot: j.settings.renewalSnapshot || "02-01", renewalYears: yearsOf(j.settings) };
           rMsg.className = "success"; rMsg.textContent = j.message || "Saved."; rPreview();
         } else { rMsg.className = "errors"; rMsg.textContent = (j && j.error) || "Could not save."; if (j && j.httpStatus === 403) { state.dev.unlocked = false; renderViews(); } }
       }).catch(function () { rSave.disabled = false; rMsg.className = "errors"; rMsg.textContent = "Could not reach the server. Nothing was changed."; });
@@ -1378,7 +1462,7 @@
 
   function init() {
     var h = (location.hash || "").replace("#", "");
-    if (["dashboard", "meeting", "members"].indexOf(h) !== -1) state.tab = h;
+    if (["dashboard", "renewals", "meeting", "members"].indexOf(h) !== -1) state.tab = h;
     buildHeaderMenu();
     renderViews();
   }

@@ -199,9 +199,9 @@ table.report-table th { color: var(--muted); font-weight: 600; font-size: 12px; 
 .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; }
 .chart-panel .hint { margin: -4px 0 8px; }
 .chart-svg { width: 100%; height: auto; display: block; }
-.chart-grid line, line.chart-grid { stroke: #e3e6ea; stroke-width: 1; }
-.chart-axis { font-size: 11px; fill: #4b5563; }
-.chart-value { font-size: 11px; fill: #1a1a1a; font-weight: 600; }
+.chart-grid line, line.chart-grid { stroke: #c9ced6; stroke-width: 1; }
+.chart-axis { font-size: 19px; fill: #111827; }
+.chart-value { font-size: 20px; fill: #000; font-weight: 700; }
 .chart-bar rect:hover, .chart-bar:focus rect { opacity: .8; }
 .chart-bar:focus, .chart-point:focus, .donut-svg path:focus, .donut-legend li:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
 .chart-empty { color: var(--muted); padding: 28px 12px; text-align: center; font-size: 13px; }

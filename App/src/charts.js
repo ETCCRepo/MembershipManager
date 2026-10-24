@@ -52,7 +52,7 @@
   function bar(data, opts) {
     opts = opts || {};
     if (!data.length || data.every(function (d) { return !d.count; })) return empty(opts.emptyText || "Nothing to chart for this selection.");
-    var W = 720, H = opts.height || 280, m = { l: 44, r: 12, t: 16, b: data.length > 8 ? 70 : 40 };
+    var W = 720, H = opts.height || 280, m = { l: 54, r: 16, t: 34, b: data.length > 8 ? 100 : 50 };
     var iw = W - m.l - m.r, ih = H - m.t - m.b;
     var sc = intScale(0, Math.max.apply(null, data.map(function (d) { return d.count; })), true), max = sc.max;
     var svg = s("svg", { viewBox: "0 0 " + W + " " + H, class: "chart-svg", role: "img", "aria-label": opts.ariaLabel || "Bar chart" });
@@ -69,7 +69,7 @@
       rect.appendChild(s("title", {}, d.label + ": " + fmt(d.count)));
       g.appendChild(rect);
       if (data.length <= 16 && d.count) g.appendChild(s("text", { x: x + bw / 2, y: y - 4, "text-anchor": "middle", class: "chart-value" }, fmt(d.count)));
-      var lx = x + bw / 2, ly = H - m.b + 14;
+      var lx = x + bw / 2, ly = H - m.b + 20;
       var lab = s("text", { x: lx, y: ly, "text-anchor": data.length > 8 ? "end" : "middle", class: "chart-axis" }, d.label.length > 16 ? d.label.slice(0, 15) + "…" : d.label);
       if (data.length > 8) lab.setAttribute("transform", "rotate(-40 " + lx + " " + ly + ")");
       g.appendChild(lab);
@@ -126,12 +126,12 @@
     var W = 720, H = opts.height || 300, m = { l: 52, r: 22, t: 34, b: 42 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
     var legend = [], lrow = 0, lx0 = m.l;
     series.forEach(function (sr) {
-      var lw = 28 + sr.name.length * 6.2;
+      var lw = 34 + sr.name.length * 10.6;
       if (lx0 + lw > W - m.r && lx0 > m.l) { lrow++; lx0 = m.l; }
       legend.push({ x: lx0, row: lrow });
       lx0 += lw;
     });
-    m.t = 20 + (lrow + 1) * 16; ih = H - m.t - m.b;
+    m.t = 18 + (lrow + 1) * 26; ih = H - m.t - m.b;
     var vals = all.map(function (p) { return p.count; });
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
     var pad = Math.max(1, Math.round((hi - lo) * 0.15)), sc = intScale(Math.max(0, lo - pad), hi + pad, false), minV = sc.min, maxV = sc.max;
@@ -162,10 +162,10 @@
       });
     });
     series.forEach(function (sr, si) {
-      var color = sr.color || COLORS[si % COLORS.length], lx = legend[si].x, ly = 14 + legend[si].row * 16;
+      var color = sr.color || COLORS[si % COLORS.length], lx = legend[si].x, ly = 16 + legend[si].row * 26;
       if (sr.dots) svg.appendChild(s("circle", { cx: lx + 6, cy: ly, r: 5, fill: "#fff", stroke: color, "stroke-width": 3 }));
       else svg.appendChild(s("line", { x1: lx, x2: lx + 14, y1: ly, y2: ly, stroke: color, "stroke-width": 3 }));
-      svg.appendChild(s("text", { x: lx + 20, y: ly + 4, class: "chart-axis" }, sr.name));
+      svg.appendChild(s("text", { x: lx + 20, y: ly + 6, class: "chart-axis" }, sr.name));
     });
     return svg;
   }

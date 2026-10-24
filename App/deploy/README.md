@@ -251,6 +251,18 @@ recent window's end — e.g. with Oct 1 – Dec 31 it is 12/31/2027 from Oct 1 2
 - **Expired** — expiration date is before today (this replaces the older "Active but past expiration" card).
 Role/lifetime accounts (expiring 5+ years out) are left out. The Reports → Renewals & expirations table has the same three groups.
 
+## Renewals tab
+
+Tabs: Dashboard, **Renewals**, Monthly Meeting, Members. Shows the renewal start/end and the **new member auto renewal date** (a third month/day setting in
+Developer menu -> Renewal dates, default Oct 1; people who join *after* it are renewed automatically for next year, so they are left out of that cycle's rate),
+the **% of members (people) renewed**, a line chart of that % across the current window, and a bar chart per cycle 2024 and on.
+- **Pool** for a cycle = non-role records paid through the window end (expiration on/after it), joined on/before the cutoff (no join date = included), lifetime dates excluded.
+  **Renewed** = expires on/after the target (end date one year later). % = renewed / pool.
+- **Line chart:** one point per saved full import this cycle (each snapshot now stores `renewalRows`, [expiration, joined] pairs) plus today's live value. Snapshots saved
+  before this change have no rows, so the line fills in from the first import after deploy.
+- **Bars:** cycle year Y (window opening in Y) measured on the first Feb 1 after the window ends. Uses the current roster's expiration dates, so it counts only people still on the file
+  (survivor bias: it can run high) and a member who renewed late, after Feb 1, still counts as renewed.
+
 ## Total members / households over time (line charts)
 
 The dashboard card **Total membership over time** (members and households as two lines under Show: Both, one line otherwise) opens a full
@@ -326,3 +338,7 @@ checked by review only until PHP is installed and exercised on the server.
 The footer shows `vYYYY.MM.DD.NN`: the build date (America/New_York) and a two-digit counter that goes up on every build and restarts at
 01 each day (remembered in `App/version.json`). `MEMBERSHIP_VERSION=2026.10.19.05 node build.js` forces a version for one build;
 `MEMBERSHIP_NO_BUMP=1` builds without recording one (previews).
+
+**Export statuses (changed 2026-10-24).** The daily export now asks ClubExpress for status ids 1,2,3 = Active, Expired, Dropped (`MEMBERSHIP_STATUS_IDS` overrides).
+Lapsed people are in the roster so the Renewals bar chart can count them; the Dashboard, Monthly Meeting and snapshots still count Active only, and the Members tab opens
+filtered to Active. ClubExpress only lists lapsed members for roughly the last year, so the bar chart skips years with none on file (2024 and 2025 today).
