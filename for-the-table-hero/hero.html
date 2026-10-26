@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>For The Table Hero</title>
+<style>
+  :root { --bg:#1c1411; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f3e8da; } }
+  html,body { margin:0; background:var(--bg); }
+  .hero { max-width:1200px; margin:0 auto; aspect-ratio:2/1; }
+  .hero svg { display:block; width:100%; height:100%; }
+  .flame { transform-box:fill-box; transform-origin:50% 100%; animation:flick .45s ease-in-out infinite alternate; }
+  @keyframes flick { from { transform:scale(1,1); } to { transform:scale(.88,1.15); } }
+</style>
+</head>
+<body>
+<div class="hero" role="img" aria-label="Three people set up a dinner event: laying a tablecloth, placing plates, hanging string lights and adding a centerpiece.">
+<svg id="s" viewBox="0 0 1200 600" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbefe0"/><stop offset="1" stop-color="#f1d3ae"/></linearGradient>
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b98a5e"/><stop offset="1" stop-color="#8f6642"/></linearGradient>
+    <radialGradient id="glow"><stop offset="0" stop-color="#ffd27a" stop-opacity=".9"/><stop offset="1" stop-color="#ffd27a" stop-opacity="0"/></radialGradient>
+  </defs>
+  <g id="stage">
+    <rect width="1200" height="600" fill="url(#wall)"/>
+    <g fill="#e8c9a0" opacity=".55">
+      <path d="M200 520V300a70 70 0 0 1 140 0v220z"/><path d="M530 520V300a70 70 0 0 1 140 0v220z"/><path d="M860 520V300a70 70 0 0 1 140 0v220z"/>
+    </g>
+    <rect y="520" width="1200" height="80" fill="url(#floor)"/>
+    <g stroke="#7a5535" stroke-opacity=".35"><path d="M0 548H1200M0 578H1200"/></g>
+
+    <text x="70" y="104" font-family="Georgia,'Times New Roman',serif" font-size="58" font-weight="700" fill="#3b2a20">For The Table</text>
+    <text x="73" y="142" font-family="system-ui,Segoe UI,sans-serif" font-size="22" fill="#7a5a45">Every great gathering starts with setup.</text>
+
+    <!-- poles + lights -->
+    <g stroke="#6b4a33" stroke-width="8" stroke-linecap="round"><path d="M70 188V520"/><path d="M1130 188V520"/></g>
+    <path id="wire" d="M1130 190Q600 300 70 190" fill="none" stroke="#4a3426" stroke-width="3" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
+    <g id="bulbs"></g>
+
+    <!-- ladder -->
+    <g stroke="#8a6a4a" stroke-linecap="round">
+      <path d="M1030 545L1048 330M1100 545L1082 330" stroke-width="7" fill="none"/>
+      <g id="rungs" stroke-width="5"></g>
+    </g>
+
+    <!-- table -->
+    <g id="table">
+      <g fill="#6b4a33"><rect x="330" y="415" width="16" height="105"/><rect x="854" y="415" width="16" height="105"/></g>
+      <path d="M320 360H880L905 405H295Z" fill="#a47a52"/>
+      <rect x="295" y="405" width="610" height="14" fill="#7d5a3a"/>
+      <g id="cloth" style="transform-box:fill-box;transform-origin:0% 50%">
+        <path d="M320 360H880L905 405H295Z" fill="#fbf6ec"/>
+        <path d="M290 405H910V470q-25 12-50 0t-50 0-50 0-50 0-50 0-50 0-50 0-50 0-50 0-50 0-50 0-50 0z" fill="#f4ecdc"/>
+        <rect x="290" y="405" width="620" height="9" fill="#c8553d"/>
+        <path d="M590 414V462M720 414V464M460 414V464" stroke="#e5d9c3" stroke-width="3"/>
+      </g>
+      <g id="plates"></g>
+      <g transform="translate(600,386)"><g id="vase">
+        <ellipse cx="0" cy="2" rx="24" ry="6" fill="#000" opacity=".12"/>
+        <path d="M-14 0q-6-26 4-34h20q10 8 4 34z" fill="#5f8f7a"/>
+        <circle cx="-12" cy="-50" r="11" fill="#c8553d"/><circle cx="10" cy="-56" r="12" fill="#e8a33d"/><circle cx="0" cy="-42" r="10" fill="#d97a8a"/><circle cx="20" cy="-42" r="9" fill="#c8553d"/>
+        <path d="M-4-34V-42M4-34V-48" stroke="#3f6b3a" stroke-width="3"/>
+        <ellipse class="flame" cx="-46" cy="-30" rx="4" ry="8" fill="#ffb347"/><rect x="-49" y="-24" width="6" height="24" rx="2" fill="#fbf6ec"/>
+        <ellipse class="flame" cx="46" cy="-30" rx="4" ry="8" fill="#ffb347"/><rect x="43" y="-24" width="6" height="24" rx="2" fill="#fbf6ec"/>
+      </g></g>
+    </g>
+
+    <g id="people"></g>
+    <rect id="dusk" width="1200" height="600" fill="#2a1a3a" opacity="0" pointer-events="none"/>
+    <g id="glows" pointer-events="none"></g>
+  </g>
+</svg>
+</div>
+<script>
+(() => {
+  const D = 12, NS = 'http://www.w3.org/2000/svg', $ = id => document.getElementById(id);
+  const EASE = 'cubic-bezier(.4,0,.2,1)';
+  // list = [[seconds, value], ...] from 0 to 12; loop-safe (everything resets while the stage is faded out)
+  const A = (el, prop, list) => el.animate(
+    list.map(([t, v]) => ({ offset: t / D, [prop]: v, easing: EASE })),
+    { duration: D * 1000, iterations: Infinity, fill: 'both' });
+  const tr = (x, y) => `translate(${x}px,${y}px)`;
+  const rot = d => `rotate(${d}deg)`;
+
+  // ---- ladder rungs
+  for (let y = 360, i = 0; y < 545; y += 36, i++) {
+    const t = (545 - y) / 215, l = 1030 + 18 * t, r = 1100 - 18 * t;
+    $('rungs').insertAdjacentHTML('beforeend', `<path d="M${l} ${y}H${r}"/>`);
+  }
+
+  // ---- string lights (drawn right to left, then switched on)
+  const P = (t, a, b, c) => (1 - t) ** 2 * a + 2 * (1 - t) * t * b + t * t * c;
+  const bulbs = [];
+  for (let i = 1; i <= 12; i++) {
+    const t = i / 13, x = P(t, 1130, 600, 70), y = P(t, 190, 300, 190);
+    $('bulbs').insertAdjacentHTML('beforeend', `<circle id="b${i}" cx="${x}" cy="${y + 10}" r="7" fill="#fff3cf" stroke="#4a3426" stroke-width="1.5" style="transform-box:fill-box;transform-origin:50% 0%"/>`);
+    $('glows').insertAdjacentHTML('beforeend', `<circle id="g${i}" cx="${x}" cy="${y + 10}" r="34" fill="url(#glow)" opacity="0"/>`);
+    bulbs.push([i, 3.3 + (i - 1) * 0.24]);
+  }
+  A($('wire'), 'strokeDashoffset', [[0, 1], [3, 1], [6.2, 0], [12, 0]]);
+  bulbs.forEach(([i, t]) => {
+    A($('b' + i), 'transform', [[0, 'scale(0)'], [t, 'scale(0)'], [t + .3, 'scale(1)'], [12, 'scale(1)']]);
+    A($('g' + i), 'opacity', [[0, 0], [6.6 + (i % 4) * .12, 0], [7.4, 1], [8.4, .75], [9.4, 1], [10.4, .75], [11.3, .9], [12, .9]]);
+  });
+  A($('dusk'), 'opacity', [[0, 0], [6.4, 0], [8, .2], [12, .2]]);
+
+  // ---- plates
+  const xs = [370, 490, 710, 830], slots = [];
+  [[375, 0], [395, 1]].forEach(([y, r]) => xs.forEach((x, i) => slots.push({ x, y, k: i + r * 4 })));
+  slots.sort((a, b) => b.x - a.x || a.y - b.y);
+  slots.forEach((s, n) => {
+    const id = 'pl' + n, t = 4.6 + n * .22;
+    $('plates').insertAdjacentHTML('beforeend', `<g transform="translate(${s.x},${s.y})"><g id="${id}">
+      <ellipse cx="0" cy="3" rx="30" ry="8" fill="#000" opacity=".12"/>
+      <ellipse cx="0" cy="0" rx="28" ry="8" fill="#fff"/><ellipse cx="0" cy="0" rx="18" ry="5" fill="#eadfca"/>
+      <rect x="-42" y="-5" width="12" height="9" rx="2" fill="${n % 2 ? '#5f8f7a' : '#c8553d'}"/></g></g>`);
+    const e = $(id);
+    A(e, 'transform', [[0, 'translate(0px,-46px) scale(.6)'], [t, 'translate(0px,-46px) scale(.6)'], [t + .38, 'translate(0px,0px) scale(1)'], [12, 'translate(0px,0px) scale(1)']]);
+    A(e, 'opacity', [[0, 0], [t, 0], [t + .1, 1], [12, 1]]);
+  });
+
+  // ---- cloth
+  A($('cloth'), 'transform', [[0, 'scaleX(0)'], [2.7, 'scaleX(0)'], [3.9, 'scaleX(1)'], [12, 'scaleX(1)']]);
+  A($('cloth'), 'opacity', [[0, 1], [12, 1]]);
+
+  // ---- people
+  const person = (id, x, y, c) => `<g transform="translate(${x},${y})">
+    <ellipse cx="0" cy="2" rx="42" ry="8" fill="#000" opacity=".16"/>
+    <g id="${id}-mv"><g id="${id}-bob">
+      <rect x="-17" y="-98" width="14" height="96" rx="6" fill="${c.pants}"/><rect x="3" y="-98" width="14" height="96" rx="6" fill="${c.pants}"/>
+      <rect x="-22" y="-8" width="20" height="10" rx="5" fill="#2b2320"/><rect x="2" y="-8" width="20" height="10" rx="5" fill="#2b2320"/>
+      <g transform="translate(-25,-172)"><g id="${id}-al" style="transform-origin:0 0"><rect x="-8" y="-6" width="16" height="84" rx="8" fill="${c.shirt}"/><circle cx="0" cy="82" r="9" fill="${c.skin}"/></g></g>
+      <g transform="translate(25,-172)"><g id="${id}-ar" style="transform-origin:0 0"><rect x="-8" y="-6" width="16" height="84" rx="8" fill="${c.shirt}"/><circle cx="0" cy="82" r="9" fill="${c.skin}"/></g></g>
+      <rect x="-25" y="-190" width="50" height="100" rx="16" fill="${c.shirt}"/>
+      <rect x="-6" y="-208" width="12" height="18" fill="${c.skin}"/>
+      <circle cx="0" cy="-224" r="25" fill="${c.skin}"/>
+      <path d="M-26 -228a26 26 0 0 1 52 0q-26-14-52 0z" fill="${c.hair}"/>
+      <circle cx="-9" cy="-222" r="2.6" fill="#2b2320"/><circle cx="9" cy="-222" r="2.6" fill="#2b2320"/>
+      <path d="M-8 -212q8 7 16 0" fill="none" stroke="#2b2320" stroke-width="2.4" stroke-linecap="round"/>
+      ${c.extra || ''}
+    </g></g></g>`;
+
+  const bundle = `<g id="A-carry"><rect x="-34" y="-158" width="68" height="40" rx="14" fill="#fbf6ec"/><rect x="-34" y="-142" width="68" height="9" fill="#c8553d"/></g>`;
+  const tray = `<g id="B-carry"><rect x="-40" y="-130" width="80" height="7" rx="3" fill="#8a6a4a"/>${[-24, -8, 8, 24].map(x => `<ellipse cx="${x}" cy="-136" rx="14" ry="5" fill="#fff" stroke="#e5d9c3"/>`).join('')}</g>`;
+  const vaseCarry = `<g id="C-carry"><path d="M-14 -122q-6-26 4-34h20q10 8 4 34z" fill="#5f8f7a"/><circle cx="-8" cy="-172" r="11" fill="#c8553d"/><circle cx="10" cy="-176" r="12" fill="#e8a33d"/><circle cx="1" cy="-162" r="10" fill="#d97a8a"/></g>`;
+
+  $('people').innerHTML =
+    person('A', 210, 545, { shirt: '#c8553d', pants: '#3d4b63', skin: '#e0ac86', hair: '#3a2a20', extra: bundle }) +
+    person('B', 975, 545, { shirt: '#4f7f69', pants: '#3b3b44', skin: '#8d5a3c', hair: '#1f1814', extra: tray }) +
+    person('C', 1065, 545, { shirt: '#e0a63a', pants: '#554236', skin: '#f0c8a4', hair: '#8a4b2a', extra: vaseCarry });
+
+  // walking bob (little hops while moving)
+  const bob = (id, spans) => {
+    const l = [[0, tr(0, 0)]];
+    spans.forEach(([a, b]) => { for (let t = a; t < b; t += .4) { l.push([t + .0, tr(0, 0)], [t + .2, tr(0, -6)]); } l.push([b, tr(0, 0)]); });
+    l.push([12, tr(0, 0)]);
+    const ord = l.sort((p, q) => p[0] - q[0]).filter((v, i, a) => !i || v[0] > a[i - 1][0]);
+    A($(id + '-bob'), 'transform', ord);
+  };
+  bob('A', [[.6, 2.6]]); bob('B', [[2.8, 4.4]]); bob('C', [[1.4, 2.6], [6.4, 7.4], [7.6, 8.9]]);
+
+  // stage fade (also hides the loop reset)
+  A($('stage'), 'opacity', [[0, 0], [.7, 1], [11.2, 1], [11.9, 0], [12, 0]]);
+
+  // A: carries the tablecloth in, spreads it, smooths it, waves
+  A($('A-mv'), 'transform', [[0, tr(-330, 0)], [.6, tr(-330, 0)], [2.6, tr(0, 0)], [11.9, tr(0, 0)], [12, tr(-330, 0)]]);
+  A($('A-carry'), 'opacity', [[0, 1], [3.3, 1], [3.6, 0], [11.95, 0], [12, 1]]);
+  A($('A-ar'), 'transform', [[0, rot(-30)], [2.6, rot(-30)], [3, rot(-95)], [3.6, rot(-60)], [4.1, rot(-95)], [4.6, rot(-8)], [9.6, rot(-8)], [10, rot(-160)], [10.35, rot(-135)], [10.7, rot(-160)], [11.05, rot(-135)], [11.5, rot(-8)], [12, rot(-30)]]);
+  A($('A-al'), 'transform', [[0, rot(30)], [2.6, rot(30)], [3, rot(95)], [3.6, rot(60)], [4.1, rot(95)], [4.6, rot(8)], [12, rot(30)]]);
+
+  // B: brings the plates, sets the table, waves
+  A($('B-mv'), 'transform', [[0, tr(325, 0)], [2.8, tr(325, 0)], [4.4, tr(0, 0)], [11.9, tr(0, 0)], [12, tr(325, 0)]]);
+  A($('B-carry'), 'opacity', [[0, 1], [4.5, 1], [4.7, 0], [11.95, 0], [12, 1]]);
+  A($('B-al'), 'transform', [[0, rot(32)], [4.4, rot(32)], [4.8, rot(70)], [5.3, rot(40)], [5.8, rot(70)], [6.3, rot(40)], [6.9, rot(8)], [9.6, rot(8)], [10, rot(160)], [10.35, rot(135)], [10.7, rot(160)], [11.05, rot(135)], [11.5, rot(8)], [12, rot(32)]]);
+  A($('B-ar'), 'transform', [[0, rot(-32)], [4.4, rot(-32)], [4.8, rot(-8)], [12, rot(-32)]]);
+
+  // C: climbs the ladder, hangs the lights, carries the centerpiece, cheers
+  A($('C-mv'), 'transform', [[0, tr(0, 0)], [1.4, tr(0, 0)], [2.6, tr(0, -85)], [6.4, tr(0, -85)], [7.4, tr(0, 0)], [7.6, tr(0, 0)], [8.9, tr(-465, 25)], [11.9, tr(-465, 25)], [12, tr(0, 0)]]);
+  const wig = [];
+  for (let t = 3.0, k = 0; t < 6.3; t += .4, k++) wig.push([t, rot(k % 2 ? -178 : -160)]);
+  A($('C-ar'), 'transform', [[0, rot(-6)], [2.6, rot(-6)], [2.9, rot(-165)], ...wig, [6.5, rot(-165)], [7.3, rot(-8)], [7.8, rot(-30)], [9, rot(-30)], [9.5, rot(-8)], [9.9, rot(-150)], [10.3, rot(-170)], [10.7, rot(-150)], [11.1, rot(-170)], [11.6, rot(-8)], [12, rot(-6)]]);
+  A($('C-al'), 'transform', [[0, rot(6)], [2.6, rot(6)], [2.9, rot(168)], [6.5, rot(168)], [7.3, rot(8)], [7.8, rot(30)], [9, rot(30)], [9.5, rot(8)], [9.9, rot(150)], [10.3, rot(170)], [10.7, rot(150)], [11.1, rot(170)], [11.6, rot(8)], [12, rot(6)]]);
+  A($('C-carry'), 'opacity', [[0, 0], [7.7, 0], [7.9, 1], [9, 1], [9.1, 0], [12, 0]]);
+
+  // centerpiece lands on the table
+  A($('vase'), 'transform', [[0, tr(0, -70)], [8.9, tr(0, -70)], [9.4, tr(0, 0)], [9.55, tr(0, -7)], [9.7, tr(0, 0)], [12, tr(0, 0)]]);
+  A($('vase'), 'opacity', [[0, 0], [8.9, 0], [9.0, 1], [12, 1]]);
+
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.getAnimations().forEach(a => { a.pause(); a.currentTime = 10.6 * 1000; });
+    document.querySelectorAll('.flame').forEach(f => f.style.animation = 'none');
+  }
+  window.__seek = s => document.getAnimations().forEach(a => { a.pause(); if (a.effect.getTiming().iterations === Infinity && a.effect.getTiming().duration === D * 1000) a.currentTime = s * 1000; });
+})();
+</script>
+</body>
+</html>
