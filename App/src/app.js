@@ -270,12 +270,7 @@
     closeBtn.addEventListener("click", close);
     // Print just this list: body.print-modal hides the page behind it (see styles.css) while the dialog prints.
     var prn = el("button", { class: "btn" }, ["🖨 Print"]);
-    prn.addEventListener("click", function () {
-      document.body.classList.add("print-modal");
-      var done = function () { document.body.classList.remove("print-modal"); window.removeEventListener("afterprint", done); };
-      window.addEventListener("afterprint", done);
-      window.print();
-    });
+    prn.addEventListener("click", printModal);
     var exp = el("button", { class: "btn" }, ["⬇ Export"]);
     exp.addEventListener("click", function () { var t = memberRows(st.members); download("members.csv", I.toCsv(t.header, t.rows)); });
     var body = [el("div", { class: "count", text: num(st.members.length) + " record" + (st.members.length === 1 ? "" : "s") + (st.note ? " · " + st.note : "") })];
@@ -287,6 +282,14 @@
     var backdrop = el("div", { class: "modal-backdrop no-print" }, [modal]);
     backdrop.addEventListener("click", function (e) { if (e.target === backdrop) close(); });
     host.appendChild(backdrop);
+  }
+
+  // Print just the open dialog: body.print-modal hides the page behind it (see styles.css) while it prints.
+  function printModal() {
+    document.body.classList.add("print-modal");
+    var done = function () { document.body.classList.remove("print-modal"); window.removeEventListener("afterprint", done); };
+    window.addEventListener("afterprint", done);
+    window.print();
   }
 
   function renderDetailModal() {
@@ -316,8 +319,12 @@
     }
     var closeBtn = el("button", { class: "btn" }, ["✕ Close"]);
     closeBtn.addEventListener("click", close);
+    var prn = el("button", { class: "btn" }, ["🖨 Print"]);
+    prn.addEventListener("click", printModal);
+    var exp = el("button", { class: "btn" }, ["⬇ Export"]);
+    exp.addEventListener("click", function () { var t = memberRows([m]); download("member-" + (m.memberNumber || "record") + ".csv", I.toCsv(t.header, t.rows)); });
     var modal = el("div", { class: "modal", role: "dialog", "aria-modal": "true" }, [
-      el("div", { class: "modal-head" }, [el("h3", { text: L.fullName(m) || "Member" }), closeBtn]),
+      el("div", { class: "modal-head" }, [el("h3", { text: L.fullName(m) || "Member" }), prn, exp, closeBtn]),
       el("div", { class: "modal-body" }, sections)
     ]);
     var backdrop = el("div", { class: "modal-backdrop no-print top", }, [modal]);
@@ -887,7 +894,7 @@
     view.appendChild(area);
 
     var actions = el("div", { class: "toolbar no-print" });
-    var exp = el("button", { class: "btn" }, ["⬇ Export meeting CSV"]);
+    var exp = el("button", { class: "btn" }, ["⬇ Export"]);
     exp.addEventListener("click", function () {
       var out = [["Monthly Meeting"], [sel.start + " to " + effEnd + " (meeting " + sel.end + "), " + R.TZ]];
       sections.forEach(function (s) { out.push([]); out.push([s.title]); out.push(s.header); s.rows.forEach(function (r) { out.push(r); }); });
@@ -987,7 +994,7 @@
     }
     if (b.rejected.length) {
       var rl = b.rejected.slice(0, 15).map(function (r) { return el("li", { text: "Row " + r.rowNumber + ": " + r.reason }); });
-      var dl = el("button", { class: "btn" }, ["⬇ Download rejected rows (CSV)"]);
+      var dl = el("button", { class: "btn" }, ["⬇ Export rejected rows"]);
       dl.addEventListener("click", function () {
         download("rejected-rows.csv", I.toCsv(["Row", "Reason"].concat(imp.header), b.rejected.map(function (r) { return [r.rowNumber, r.reason].concat(r.row); })));
       });
