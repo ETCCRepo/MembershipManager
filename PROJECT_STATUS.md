@@ -1,6 +1,6 @@
 # ETCC Membership Manager — Project Status
 
-**Last updated:** 2026-10-24 — Checkpointed and deployed v2026.10.24.43 (carrying the uncommitted report/import/developer-page work from earlier sessions); pushed after fixing the GitHub account. Node tests pass (81); `php -l` clean on developer.php and lib.php.
+**Last updated:** 2026-10-27 — Data Import panel (Sync now, schedule, sync log), Print/Export on all dialogs and a Print button on every tab; checkpointed as v2026.10.27.05 and deployed. Node tests pass (81); PHP is not run locally (syntax lint + `php-undefined-check.js`).
 
 ## What this is
 
@@ -22,6 +22,13 @@ Membership dashboard + reports for the East Tennessee Corvette Club. Live locati
 - Import parsing runs in the browser (preview before anything is saved); the server re-validates and never stores raw CSV.
 
 ## Session log
+
+### 2026-10-27 — Data Import panel, Print/Export everywhere (checkpoint v2026.10.27.05)
+- **Data Import** (Developer menu; was "Daily sync"): **Sync now** button, an **import schedule** (on/off, daily at a time or hourly, optional start/end date, blank end = forever, Eastern time) and a **Sync log** table. The website cannot reach the club computer, so Sync now only records `requestedAt` in `data/sync-status.json`. The Windows task `membership-sync-members` now runs **every 5 minutes** with `node sync\sync-members.js --if-due`: it POSTs `{status:"poll"}` to `members-sync.php`, `membership_sync_claim()` answers 'manual' or 'scheduled' (`membership_sync_schedule_due`), and only then does Chrome start. Claims older than 30 min count as lost; `sync/sync-members.lock` stops overlapping runs. The task was re-registered with `sync\install-scheduled-task.ps1` (now `-PollMinutes`, no `-Time`). Settings live in `data/settings.json` (`syncEnabled`, `syncFrequency`, `syncTime`, `syncStart`, `syncEnd`; validators in `membership_setting_valid`). Page auto-refreshes every 15 s while a request is pending; the card is wider (`.pw-form.wide`).
+- **Sync log** (`data/sync-log.json`, last 200): one row per run from `membership_sync_status_write` (scheduled / Sync now / run on the computer) and for browser uploads (`members-import.php`, label "Upload"). The separate Import history table was removed from the Developer page as redundant (the stored import log still exists on the server).
+- **Print / Export:** every dialog (list dialogs, member detail) has Print and Export buttons (`printModal()` + `body.print-modal` print CSS); "CSV" buttons were renamed Export; a Print button sits in the tab bar for every tab (the old Monthly Meeting Print button was removed).
+- **Verified:** 81 Node tests; the live poll endpoint and a quiet `--if-due` run; logged-in pages themselves were not exercised by me. **Not yet tried live:** Save schedule with hourly/date limits, Sync now end-to-end from the browser, Print previews.
+- **Gotcha - push 403 again:** git's stored credential is the `BWERepo` GitHub login, which cannot write to `ETCCRepo/MembershipManager` (see the 2026-10-24 entry for the one-off-token workaround).
 
 ### 2026-10-24 — Checkpoint v2026.10.24.43 and GitHub push fix
 - **Shipped:** committed the previously uncommitted work as `514dcc0` (touched `App/src/{app,charts,csvimport,reports}.js`, `styles.css`, `deploy/{README.md,developer.php,lib.php}`, `sync/clubexpress-members.js`, `test/run-tests.js`) plus `985f472` (version bump). Deployed by FTP; live site returned HTTP 200 (logged-in paths not smoke-tested). 81 Node tests pass; `php -l` clean on the two changed PHP files.
