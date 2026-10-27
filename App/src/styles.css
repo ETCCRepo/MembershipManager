@@ -312,3 +312,12 @@ body.report-open .modal-backdrop.top { z-index: 430; }
 .sec-toggle { background: none; border: none; cursor: pointer; font-size: 13px; line-height: 1; color: var(--muted); padding: 2px 4px; border-radius: 4px; flex-shrink: 0; }
 .sec-toggle:hover, .sec-toggle:focus { background: #eef1f4; color: var(--ink); outline: none; }
 @media print { .panel.collapsible.collapsed > .sec-body { display: block !important; } .sec-toggle, .sec-controls { display: none !important; } }
+
+/* Print button in a list dialog: print only the dialog, in flow, without its buttons. */
+@media print {
+  body.print-modal .wrap, body.print-modal footer.app-footer { display: none !important; }
+  body.print-modal .modal-backdrop.no-print { display: block !important; position: static; background: none; padding: 0; }
+  body.print-modal .modal { max-width: none; max-height: none; overflow: visible; box-shadow: none; border-radius: 0; }
+  body.print-modal .modal-head .btn { display: none !important; }
+  body.print-modal .modal-table { max-height: none !important; overflow: visible !important; }
+}

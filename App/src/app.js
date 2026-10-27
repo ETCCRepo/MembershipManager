@@ -268,12 +268,20 @@
     });
     var closeBtn = el("button", { class: "btn" }, ["✕ Close"]);
     closeBtn.addEventListener("click", close);
-    var exp = el("button", { class: "btn" }, ["⬇ CSV"]);
+    // Print just this list: body.print-modal hides the page behind it (see styles.css) while the dialog prints.
+    var prn = el("button", { class: "btn" }, ["🖨 Print"]);
+    prn.addEventListener("click", function () {
+      document.body.classList.add("print-modal");
+      var done = function () { document.body.classList.remove("print-modal"); window.removeEventListener("afterprint", done); };
+      window.addEventListener("afterprint", done);
+      window.print();
+    });
+    var exp = el("button", { class: "btn" }, ["⬇ Export"]);
     exp.addEventListener("click", function () { var t = memberRows(st.members); download("members.csv", I.toCsv(t.header, t.rows)); });
     var body = [el("div", { class: "count", text: num(st.members.length) + " record" + (st.members.length === 1 ? "" : "s") + (st.note ? " · " + st.note : "") })];
     body.push(st.members.length ? el("div", { class: "tablewrap modal-table" }, [tkEnhanceTable(el("table", { class: "grid" }, [thead, tbody]), st.tkKey || (st.tkKey = "list#" + (++tkSeq)))]) : el("div", { class: "empty-state", text: "No members." }));
     var modal = el("div", { class: "modal wide", role: "dialog", "aria-modal": "true", "aria-label": st.title }, [
-      el("div", { class: "modal-head" }, [el("h3", { text: st.title }), exp, closeBtn]),
+      el("div", { class: "modal-head" }, [el("h3", { text: st.title }), prn, exp, closeBtn]),
       el("div", { class: "modal-body" }, body)
     ]);
     var backdrop = el("div", { class: "modal-backdrop no-print" }, [modal]);
@@ -733,7 +741,7 @@
     view.appendChild(filterBar(false));
     var search = el("input", { type: "search", placeholder: "Search name, number, email, city…", value: state.search, "aria-label": "Search members" });
     var countEl = el("span", { class: "count" });
-    var exp = el("button", { class: "btn" }, ["⬇ CSV"]);
+    var exp = el("button", { class: "btn" }, ["⬇ Export"]);
     var toolbar = el("div", { class: "toolbar" }, [search, countEl, el("span", { class: "spacer" }), exp]);
     view.appendChild(toolbar);
     var columns = L.visibleColumns(state.members);
@@ -1109,7 +1117,7 @@
     var presetSel = select("Period", CHART_PRESETS, cp.preset, function (v) { cp.preset = v; renderChartPage(); });
     var pr = el("button", { class: "btn" }, ["🖨 Print"]);
     pr.addEventListener("click", function () { window.print(); });
-    var exp = el("button", { class: "btn" }, ["⬇ CSV"]);
+    var exp = el("button", { class: "btn" }, ["⬇ Export"]);
     exp.addEventListener("click", function () {
       var out = [[title], [p.label + " (" + p.start + " to " + p.end + "), " + R.TZ], [], header].concat(rows);
       download("chart-" + cp.kind + "-" + cp.preset + ".csv", out.map(function (r) { return r.map(I.csvCell).join(","); }).join("\r\n") + "\r\n");
