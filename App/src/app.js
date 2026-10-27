@@ -903,9 +903,7 @@
       sections.forEach(function (s) { out.push([]); out.push([s.title]); out.push(s.header); s.rows.forEach(function (r) { out.push(r); }); });
       download("monthly-meeting-" + sel.end + ".csv", out.map(function (r) { return r.map(I.csvCell).join(","); }).join("\r\n") + "\r\n");
     });
-    var pr = el("button", { class: "btn" }, ["🖨 Print"]);
-    pr.addEventListener("click", function () { window.print(); });
-    actions.appendChild(exp); actions.appendChild(pr);
+    actions.appendChild(exp);
     view.appendChild(actions);
     return view;
   }
