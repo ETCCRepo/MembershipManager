@@ -187,6 +187,9 @@
       try { localStorage.setItem("mm.view", v); } catch (e) { /* private mode: setting just isn't remembered */ }
       renderViews();
     });
+    var tabPrint = el("button", { class: "btn", type: "button", title: "Print this tab" }, ["🖨 Print"]);
+    tabPrint.addEventListener("click", function () { window.print(); });
+    bar.appendChild(tabPrint);
     pick.className += " view-pick";
     bar.appendChild(pick);
     return bar;
